@@ -49,13 +49,23 @@ class PointsTableModel(QAbstractTableModel):
         
         if role == Qt.DisplayRole:
             point = self.points[row]
-            
+
             if col == 0:
                 return row + 1
             elif col == 1:
                 return point.point_id
             elif col == 2:
-                return point.coord_type
+                # Вместо простого текста используем визуальный индикатор
+                # (в таблице будет отображаться текстовое представление)
+                coord_type = point.coord_type or 'FREE'
+                if coord_type == 'FIXED':
+                    return "опорный"
+                elif coord_type == 'FREE':
+                    return "свободный"
+                elif coord_type == 'APPROXIMATE':
+                    return "приближенный"
+                else:
+                    return coord_type
             elif col == 3:
                 return f"{point.x:.3f}" if point.x is not None else ""
             elif col == 4:

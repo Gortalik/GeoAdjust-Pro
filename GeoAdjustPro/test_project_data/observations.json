@@ -1,0 +1,8 @@
+[
+  {
+    "from_point": "P1",
+    "to_point": "P2",
+    "type": "direction",
+    "value": 45.0
+  }
+]

@@ -5,10 +5,13 @@
 - PlanGraphicsView: графическое отображение плана
 """
 
-from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsTextItem
+from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsTextItem, QGraphicsSimpleTextItem
 from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QPointF
 from PyQt5.QtGui import QPen, QBrush, QColor, QPainter, QFont
 import math
+
+# Импорт визуальных индикаторов
+from geoadjust.gui.visual_indicators import VisualIndicator
 
 
 class PlanGraphicsView(QGraphicsView):
@@ -142,41 +145,51 @@ class PlanGraphicsView(QGraphicsView):
             
             y += step_y
     
-    def add_point(self, point_id: str, x: float, y: float, 
+    def add_point(self, point_id: str, x: float, y: float,
                   color: QColor = QColor("red"), size: int = 8,
                   point_type: str = "FIXED"):
         """Добавление пункта на план в реальном времени"""
-        
-        # Определение цвета по типу пункта
-        if point_type == "FIXED":
-            color = QColor("blue")
-        elif point_type == "FREE":
-            color = QColor("red")
+
+        # Получение символов и цветов
+        symbols = VisualIndicator.get_symbol_map()
+        colors = VisualIndicator.get_color_scheme()
+
+        # Определение символа и цвета по типу пункта
+        if point_type.upper() == "FIXED":
+            symbol = symbols['point_fixed']
+            color = QColor(colors['point_fixed'])
+        elif point_type.upper() == "FREE":
+            symbol = symbols['point_free']
+            color = QColor(colors['point_free'])
+        elif point_type.upper() == "APPROXIMATE":
+            symbol = symbols['point_approximate']
+            color = QColor(colors['point_approximate'])
         else:
-            color = QColor("green")
-        
-        # Создание эллипса (круга) для пункта
-        radius = size / 2.0
-        ellipse = QGraphicsEllipseItem(x - radius, y - radius, size, size)
-        ellipse.setPen(QPen(color, 2))
-        ellipse.setBrush(QBrush(color))
-        ellipse.setFlag(ellipse.ItemIsSelectable)
-        ellipse.setData(0, point_id)  # Сохранение ID в элементе
-        
+            symbol = "?"
+            color = QColor(colors['status_unknown'])
+
+        # Создание текстового элемента с символом вместо геометрической фигуры
+        text_item = QGraphicsSimpleTextItem(symbol)
+        text_item.setPos(x - size/4, y - size/4)  # Центрирование символа
+        text_item.setFont(QFont("Arial", size, QFont.Bold))
+        text_item.setBrush(QBrush(color))
+        text_item.setFlag(text_item.ItemIsSelectable)
+        text_item.setData(0, point_id)  # Сохранение ID в элементе
+
         # Добавление на сцену
-        self.scene.addItem(ellipse)
-        self.points[point_id] = ellipse
-        
-        # Добавление подписи пункта
-        text_item = QGraphicsTextItem(point_id)
-        text_item.setPos(x + size/2, y - size/2)
-        text_item.setDefaultTextColor(QColor("black"))
-        text_item.setFont(QFont("Arial", 8))
         self.scene.addItem(text_item)
-        
+        self.points[point_id] = text_item
+
+        # Добавление подписи пункта
+        label_item = QGraphicsTextItem(point_id)
+        label_item.setPos(x + size/2, y - size/4)
+        label_item.setDefaultTextColor(QColor("black"))
+        label_item.setFont(QFont("Arial", 8))
+        self.scene.addItem(label_item)
+
         # Сохранение ссылки на текст для последующего удаления
-        ellipse.setData(1, text_item)
-        
+        text_item.setData(1, label_item)
+
         # Обновление сетки при добавлении точки
         self._draw_adaptive_grid()
     
@@ -191,36 +204,43 @@ class PlanGraphicsView(QGraphicsView):
             self.scene.removeItem(item)
             del self.points[point_id]
     
-    def add_observation(self, from_point: str, to_point: str, 
+    def add_observation(self, from_point: str, to_point: str,
                         obs_type: str = "direction"):
         """Добавление измерения на план"""
-        
+
         if from_point not in self.points or to_point not in self.points:
             return
-        
+
         # Получение координат пунктов
         from_item = self.points[from_point]
         to_item = self.points[to_point]
-        
+
         from_rect = from_item.boundingRect()
         to_rect = to_item.boundingRect()
-        
+
         from_center = from_item.mapToScene(from_rect.center())
         to_center = to_item.mapToScene(to_rect.center())
-        
+
         # Создание линии
         line = QGraphicsLineItem(from_center.x(), from_center.y(),
                                  to_center.x(), to_center.y())
-        
-        # Цвет по типу измерения
+
+        # Цвет и стиль линии по типу измерения (используем цвета из визуальных индикаторов)
+        colors = VisualIndicator.get_color_scheme()
+
         if obs_type == "direction":
-            line.setPen(QPen(QColor("green"), 1))
-        elif obs_type == "distance":
-            line.setPen(QPen(QColor("orange"), 2))
+            line.setPen(QPen(QColor(colors['obs_direction']), 2))
+        elif obs_type in ["slope_distance", "horizontal_distance", "distance"]:
+            line.setPen(QPen(QColor(colors['obs_slope_distance']), 3))
         elif obs_type == "height_diff":
-            line.setPen(QPen(QColor("purple"), 1, Qt.DashLine))
-        
+            line.setPen(QPen(QColor(colors['obs_height_diff']), 2, Qt.DashLine))
+        elif obs_type == "zenith_angle":
+            line.setPen(QPen(QColor(colors['obs_zenith_angle']), 2, Qt.DotLine))
+        else:
+            line.setPen(QPen(QColor(colors['status_unknown']), 1))
+
         line.setData(0, f"{from_point}-{to_point}")
+        line.setData(1, obs_type)  # Сохраняем тип измерения
         self.observations.append(line)
         self.scene.addItem(line)
     
@@ -280,15 +300,16 @@ class PlanGraphicsView(QGraphicsView):
     def mousePressEvent(self, event):
         """Обработка нажатия кнопки мыши"""
         super().mousePressEvent(event)
-        
+
         # Проверка клика по пункту
         if event.button() == Qt.LeftButton:
             pos = self.mapToScene(event.pos())
             items = self.scene.items(pos)
-            
+
             for item in items:
                 point_id = item.data(0)
-                if point_id and isinstance(item, QGraphicsEllipseItem):
+                # Проверяем как QGraphicsSimpleTextItem (для пунктов), так и другие типы элементов
+                if point_id and (isinstance(item, QGraphicsSimpleTextItem) or isinstance(item, QGraphicsEllipseItem)):
                     self.point_clicked.emit(point_id)
                     break
     

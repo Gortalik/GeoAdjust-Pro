@@ -1,621 +1,172 @@
-"""
-Диалог параметров программы GeoAdjust Pro
-
-Настройка общих параметров программы:
-- Общие настройки (язык, тема, автосохранение)
-- Настройки схемы (цвета, размеры элементов)
-- Настройки таблиц (шрифты, отображение)
-- Цвета интерфейса
-"""
-
-from typing import Dict, Any
+# src/geoadjust/gui/dialogs/program_settings.py
+import json
+from pathlib import Path
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QTabWidget,
-    QWidget, QLabel, QLineEdit, QComboBox, QSpinBox, 
-    QDoubleSpinBox, QCheckBox, QPushButton, QDialogButtonBox,
-    QColorDialog, QFontComboBox, QGroupBox
+    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QPushButton,
+    QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox, QLineEdit,
+    QTextEdit, QTabWidget, QWidget, QMessageBox, QDialogButtonBox
 )
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtCore import pyqtSignal, Qt
 import logging
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_CONFIG = {
+    'crs': {'base_crs': 'SK42', 'zone': 7, 'ellipsoid': 'Krasovsky1940'},
+    'adjustment': {'method': 'classic', 'max_iterations': 10, 'convergence': 1e-6, 'robust': False},
+    'preprocessing': {'check_closure': True, 'check_reciprocal': True, 'apply_corrections': True},
+    'instruments': {'default_angular_accuracy': 5.0, 'default_distance_const': 2.0, 'default_distance_ppm': 2.0},
+    'interface': {'theme': 'light', 'language': 'ru', 'autosave_interval': 5}
+}
 
 class ProgramSettingsDialog(QDialog):
-    """Диалог параметров программы"""
+    settings_changed = pyqtSignal(dict)
     
-    def __init__(self, parent=None):
+    def __init__(self, config_path: Path, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Параметры программы")
-        self.resize(700, 550)
-        
+        self.config_path = config_path
+        self.config = self._load_config()
+        self.setWindowTitle("Настройки программы")
+        self.resize(850, 600)
         self._init_ui()
-        self._load_settings()
-    
+        self._load_to_ui()
+
+    def _load_config(self) -> dict:
+        if self.config_path.exists():
+            try:
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"Ошибка загрузки настроек: {e}")
+        return DEFAULT_CONFIG.copy()
+
+    def _save_config(self):
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.config_path, 'w', encoding='utf-8') as f:
+            json.dump(self.config, f, indent=2, ensure_ascii=False)
+        self.settings_changed.emit(self.config)
+
     def _init_ui(self):
-        """Инициализация интерфейса"""
         layout = QVBoxLayout(self)
+        tabs = QTabWidget()
+        tabs.addTab(self._create_crs_tab(), "Система координат")
+        tabs.addTab(self._create_adjustment_tab(), "Уравнивание")
+        tabs.addTab(self._create_preprocessing_tab(), "Предобработка")
+        tabs.addTab(self._create_interface_tab(), "Интерфейс")
+        layout.addWidget(tabs)
         
-        # Создание вкладок
-        tab_widget = QTabWidget()
-        
-        # Вкладка "Общие настройки"
-        general_tab = self._create_general_tab()
-        tab_widget.addTab(general_tab, "Общие")
-        
-        # Вкладка "Схема"
-        scheme_tab = self._create_scheme_tab()
-        tab_widget.addTab(scheme_tab, "Схема")
-        
-        # Вкладка "Таблицы"
-        tables_tab = self._create_tables_tab()
-        tab_widget.addTab(tables_tab, "Таблицы")
-        
-        # Вкладка "Приборы"
-        instruments_tab = self._create_instruments_tab()
-        tab_widget.addTab(instruments_tab, "Приборы")
+        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Apply | QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(self.accept)
+        btn_box.rejected.connect(self.reject)
+        btn_box.button(QDialogButtonBox.Apply).clicked.connect(self._apply)
+        layout.addWidget(btn_box)
 
-        # Вкладка "Цвета"
-        colors_tab = self._create_colors_tab()
-        tab_widget.addTab(colors_tab, "Цвета")
-        
-        layout.addWidget(tab_widget)
-        
-        # Кнопки
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        button_box.accepted.connect(self.accept)
-        button_box.rejected.connect(self.reject)
-        
-        layout.addWidget(button_box)
-    
-    def _create_general_tab(self) -> QWidget:
-        """Создание вкладки общих настроек"""
-        tab = QWidget()
-        layout = QFormLayout(tab)
-        
-        # Язык интерфейса
-        self.language_combo = QComboBox()
-        self.language_combo.addItems(["Русский", "English"])
-        layout.addRow("Язык интерфейса:", self.language_combo)
-        
-        # Тип интерфейса
-        self.interface_type_combo = QComboBox()
-        self.interface_type_combo.addItems(["Ленточный", "Классический"])
-        layout.addRow("Тип интерфейса:", self.interface_type_combo)
-        
-        # Тема
+    def _create_crs_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QFormLayout(page)
+        self.crs_combo = QComboBox()
+        self.crs_combo.addItems(['SK42', 'SK95', 'GSK2011', 'WGS84'])
+        layout.addRow("Базовая СК:", self.crs_combo)
+        self.zone_spin = QSpinBox()
+        self.zone_spin.setRange(1, 60)
+        layout.addRow("Номер зоны:", self.zone_spin)
+        self.ellipsoid_combo = QComboBox()
+        self.ellipsoid_combo.addItems(['Krasovsky1940', 'GRS80', 'WGS84'])
+        layout.addRow("Эллипсоид:", self.ellipsoid_combo)
+        return page
+
+    def _create_adjustment_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QFormLayout(page)
+        self.method_combo = QComboBox()
+        self.method_combo.addItems(['classic', 'robust_huber', 'robust_tukey', 'l1_min'])
+        layout.addRow("Метод:", self.method_combo)
+        self.max_iter_spin = QSpinBox()
+        self.max_iter_spin.setRange(1, 50)
+        layout.addRow("Макс. итераций:", self.max_iter_spin)
+        self.conv_spin = QDoubleSpinBox()
+        self.conv_spin.setRange(1e-10, 1e-1)
+        layout.addRow("Порог сходимости:", self.conv_spin)
+        self.robust_check = QCheckBox("Включить робастное уравнивание")
+        layout.addRow("", self.robust_check)
+        return page
+
+    def _create_preprocessing_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        self.check_closure = QCheckBox("Контроль замыкания горизонта")
+        self.check_reciprocal = QCheckBox("Контроль прямых/обратных измерений")
+        self.apply_corrections = QCheckBox("Применять атмосферные и рефракционные поправки")
+        layout.addWidget(self.check_closure)
+        layout.addWidget(self.check_reciprocal)
+        layout.addWidget(self.apply_corrections)
+        layout.addStretch()
+        return page
+
+    def _create_interface_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QFormLayout(page)
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Светлая", "Тёмная", "Системная"])
+        self.theme_combo.addItems(['light', 'dark', 'system'])
         layout.addRow("Тема:", self.theme_combo)
-        
-        # Разделитель
-        layout.addRow(QLabel("<hr>"))
-        
-        # Автосохранение
-        self.autosave_check = QCheckBox("Включить автосохранение")
-        self.autosave_check.setChecked(True)
-        layout.addRow("", self.autosave_check)
-        
-        self.autosave_interval_spin = QSpinBox()
-        self.autosave_interval_spin.setRange(1, 60)
-        self.autosave_interval_spin.setValue(5)
-        self.autosave_interval_spin.setSuffix(" минут")
-        layout.addRow("Интервал автосохранения:", self.autosave_interval_spin)
-        
-        # Разделитель
-        layout.addRow(QLabel("<hr>"))
-        
-        # Последние проекты
-        self.recent_projects_spin = QSpinBox()
-        self.recent_projects_spin.setRange(0, 20)
-        self.recent_projects_spin.setValue(10)
-        layout.addRow("Количество последних проектов:", self.recent_projects_spin)
-        
-        # Показывать экран приветствия
-        self.splash_check = QCheckBox("Показывать экран приветствия при запуске")
-        self.splash_check.setChecked(True)
-        layout.addRow("", self.splash_check)
-        
-        # QFormLayout не имеет метода addStretch, используем spacer
-        from PyQt5.QtWidgets import QSpacerItem, QSizePolicy
-        spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        layout.addItem(spacer)
-        
-        return tab
-    
-    def _create_scheme_tab(self) -> QWidget:
-        """Создание вкладки настроек схемы"""
-        tab = QWidget()
-        layout = QFormLayout(tab)
-        
-        # Пункты ПВО
-        points_group = QGroupBox("Пункты ПВО")
-        points_layout = QFormLayout(points_group)
-        
-        self.point_color_btn = QPushButton("Выбрать цвет")
-        self.point_color_btn.setStyleSheet("background-color: red;")
-        self.point_color_btn.clicked.connect(lambda: self._choose_color(self.point_color_btn))
-        points_layout.addRow("Цвет пунктов:", self.point_color_btn)
-        
-        self.point_size_spin = QSpinBox()
-        self.point_size_spin.setRange(1, 20)
-        self.point_size_spin.setValue(8)
-        points_layout.addRow("Размер пунктов:", self.point_size_spin)
-        
-        self.point_shape_combo = QComboBox()
-        self.point_shape_combo.addItems(["Круг", "Квадрат", "Треугольник", "Ромб"])
-        points_layout.addRow("Форма:", self.point_shape_combo)
-        
-        layout.addRow(points_group)
-        
-        # Эллипсы ошибок
-        ellipse_group = QGroupBox("Эллипсы ошибок")
-        ellipse_layout = QFormLayout(ellipse_group)
-        
-        self.ellipse_color_btn = QPushButton("Выбрать цвет")
-        self.ellipse_color_btn.setStyleSheet("background-color: blue;")
-        self.ellipse_color_btn.clicked.connect(lambda: self._choose_color(self.ellipse_color_btn))
-        ellipse_layout.addRow("Цвет эллипсов:", self.ellipse_color_btn)
-        
-        self.ellipse_opacity_spin = QDoubleSpinBox()
-        self.ellipse_opacity_spin.setRange(0.1, 1.0)
-        self.ellipse_opacity_spin.setValue(0.5)
-        self.ellipse_opacity_spin.setSingleStep(0.1)
-        ellipse_layout.addRow("Прозрачность:", self.ellipse_opacity_spin)
-        
-        self.ellipse_line_spin = QSpinBox()
-        self.ellipse_line_spin.setRange(1, 5)
-        self.ellipse_line_spin.setValue(2)
-        ellipse_layout.addRow("Толщина линии:", self.ellipse_line_spin)
-        
-        layout.addRow(ellipse_group)
-        
-        # Измерения
-        obs_group = QGroupBox("Измерения")
-        obs_layout = QFormLayout(obs_group)
-        
-        self.direction_color_btn = QPushButton("Выбрать цвет")
-        self.direction_color_btn.setStyleSheet("background-color: green;")
-        self.direction_color_btn.clicked.connect(lambda: self._choose_color(self.direction_color_btn))
-        obs_layout.addRow("Цвет направлений:", self.direction_color_btn)
-        
-        self.distance_color_btn = QPushButton("Выбрать цвет")
-        self.distance_color_btn.setStyleSheet("background-color: orange;")
-        self.distance_color_btn.clicked.connect(lambda: self._choose_color(self.distance_color_btn))
-        obs_layout.addRow("Цвет расстояний:", self.distance_color_btn)
-        
-        self.obs_line_spin = QSpinBox()
-        self.obs_line_spin.setRange(1, 5)
-        self.obs_line_spin.setValue(1)
-        obs_layout.addRow("Толщина линии:", self.obs_line_spin)
-        
-        layout.addRow(obs_group)
-        
-        # Добавление spacer вместо addStretch (QFormLayout не имеет addStretch)
-        from PyQt5.QtWidgets import QSpacerItem, QSizePolicy
-        spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        layout.addItem(spacer)
-        
-        return tab
-    
-    def _create_tables_tab(self) -> QWidget:
-        """Создание вкладки настроек таблиц"""
-        tab = QWidget()
-        layout = QFormLayout(tab)
-        
-        # Шрифт таблиц
-        font_group = QGroupBox("Шрифт")
-        font_layout = QFormLayout(font_group)
-        
-        self.table_font_combo = QFontComboBox()
-        font_layout.addRow("Семейство шрифтов:", self.table_font_combo)
-        
-        self.table_font_size_spin = QSpinBox()
-        self.table_font_size_spin.setRange(8, 24)
-        self.table_font_size_spin.setValue(10)
-        font_layout.addRow("Размер шрифта:", self.table_font_size_spin)
-        
-        layout.addRow(font_group)
-        
-        # Отображение
-        display_group = QGroupBox("Отображение")
-        display_layout = QVBoxLayout(display_group)
-        
-        # Чередование строк
-        self.alternate_rows_check = QCheckBox("Чередовать цвет строк")
-        self.alternate_rows_check.setChecked(True)
-        display_layout.addWidget(self.alternate_rows_check)
-        
-        # Показывать сетку
-        self.show_grid_check = QCheckBox("Показывать сетку таблицы")
-        self.show_grid_check.setChecked(True)
-        display_layout.addWidget(self.show_grid_check)
-        
-        # Показывать заголовки
-        self.show_headers_check = QCheckBox("Показывать заголовки столбцов")
-        self.show_headers_check.setChecked(True)
-        display_layout.addWidget(self.show_headers_check)
-        
-        # Выделение строки при наведении
-        self.highlight_row_check = QCheckBox("Подсвечивать строку при наведении")
-        self.highlight_row_check.setChecked(True)
-        display_layout.addWidget(self.highlight_row_check)
-        
-        layout.addRow(display_group)
-        
-        # Поведение
-        behavior_group = QGroupBox("Поведение")
-        behavior_layout = QVBoxLayout(behavior_group)
-        
-        # Подтверждение удаления
-        self.confirm_delete_check = QCheckBox("Запрашивать подтверждение при удалении")
-        self.confirm_delete_check.setChecked(True)
-        behavior_layout.addWidget(self.confirm_delete_check)
-        
-        # Автосохранение при редактировании
-        self.auto_save_edit_check = QCheckBox("Автосохранение при редактировании")
-        self.auto_save_edit_check.setChecked(False)
-        behavior_layout.addWidget(self.auto_save_edit_check)
-        
-        layout.addRow(behavior_group)
-        
-        # QFormLayout не имеет addStretch, используем spacer
-        from PyQt5.QtWidgets import QSpacerItem, QSizePolicy
-        spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        layout.addItem(spacer)
-        
-        return tab
-    
-    def _create_instruments_tab(self) -> QWidget:
-        """Создание вкладки настроек приборов"""
-        from PyQt5.QtWidgets import QListWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel
-        from PyQt5.QtCore import Qt
+        self.lang_combo = QComboBox()
+        self.lang_combo.addItems(['ru', 'en'])
+        layout.addRow("Язык:", self.lang_combo)
+        self.autosave_spin = QSpinBox()
+        self.autosave_spin.setRange(1, 60)
+        layout.addRow("Автосохранение (мин):", self.autosave_spin)
+        return page
 
-        tab = QWidget()
-        layout = QHBoxLayout(tab)
-
-        # Список доступных приборов
-        self.instruments_list = QListWidget()
-        self.instruments_list.setMaximumWidth(200)
-        layout.addWidget(self.instruments_list)
-
-        # Панель свойств выбранного прибора
-        properties_group = QGroupBox("Параметры прибора")
-        properties_layout = QFormLayout(properties_group)
-
-        # Угловые измерения
-        angular_group = QGroupBox("Угловые измерения")
-        angular_layout = QFormLayout(angular_group)
-
-        self.angular_accuracy_spin = QDoubleSpinBox()
-        self.angular_accuracy_spin.setRange(0.1, 60.0)
-        self.angular_accuracy_spin.setValue(1.0)
-        self.angular_accuracy_spin.setSuffix(" сек")
-        angular_layout.addRow("СКО угла:", self.angular_accuracy_spin)
-
-        self.angular_repeatability_spin = QDoubleSpinBox()
-        self.angular_repeatability_spin.setRange(0.1, 10.0)
-        self.angular_repeatability_spin.setValue(0.5)
-        self.angular_repeatability_spin.setSuffix(" сек")
-        angular_layout.addRow("Повторяемость:", self.angular_repeatability_spin)
-
-        properties_layout.addRow(angular_group)
-
-        # Линейные измерения
-        distance_group = QGroupBox("Линейные измерения")
-        distance_layout = QFormLayout(distance_group)
-
-        self.distance_accuracy_a_spin = QDoubleSpinBox()
-        self.distance_accuracy_a_spin.setRange(0.1, 100.0)
-        self.distance_accuracy_a_spin.setValue(1.0)
-        self.distance_accuracy_a_spin.setSuffix(" мм")
-        distance_layout.addRow("СКО (постоянная часть):", self.distance_accuracy_a_spin)
-
-        self.distance_accuracy_b_spin = QDoubleSpinBox()
-        self.distance_accuracy_b_spin.setRange(0.0, 10.0)
-        self.distance_accuracy_b_spin.setValue(1.0)
-        self.distance_accuracy_b_spin.setSuffix(" мм/км")
-        distance_layout.addRow("СКО (переменная часть):", self.distance_accuracy_b_spin)
-
-        properties_layout.addRow(distance_group)
-
-        # Нивелирные измерения
-        leveling_group = QGroupBox("Нивелирные измерения")
-        leveling_layout = QFormLayout(leveling_group)
-
-        self.leveling_accuracy_spin = QDoubleSpinBox()
-        self.leveling_accuracy_spin.setRange(0.1, 10.0)
-        self.leveling_accuracy_spin.setValue(0.8)
-        self.leveling_accuracy_spin.setSuffix(" мм/станц")
-        leveling_layout.addRow("СКО нивелирования:", self.leveling_accuracy_spin)
-
-        properties_layout.addRow(leveling_group)
-
-        # Кнопки управления
-        buttons_layout = QHBoxLayout()
-
-        self.add_instrument_btn = QPushButton("Добавить")
-        self.delete_instrument_btn = QPushButton("Удалить")
-        self.save_instrument_btn = QPushButton("Сохранить")
-
-        buttons_layout.addWidget(self.add_instrument_btn)
-        buttons_layout.addWidget(self.delete_instrument_btn)
-        buttons_layout.addWidget(self.save_instrument_btn)
-        buttons_layout.addStretch()
-
-        properties_layout.addRow(buttons_layout)
-
-        layout.addWidget(properties_group)
-
-        # Загрузка списка приборов
-        self._load_instruments_list()
-
-        # Подключение сигналов
-        self.instruments_list.itemSelectionChanged.connect(self._on_instrument_selected)
-        self.add_instrument_btn.clicked.connect(self._add_instrument)
-        self.delete_instrument_btn.clicked.connect(self._delete_instrument)
-        self.save_instrument_btn.clicked.connect(self._save_instrument)
-
-        return tab
-
-    def _load_instruments_list(self):
-        """Загрузка списка приборов"""
-        from geoadjust.core.adjustment.instruments import InstrumentLibrary
-
-        self.instruments_list.clear()
-        library = InstrumentLibrary()
-
-        for name, instrument in library.instruments.items():
-            display_name = name.replace('_', ' ').title()
-            self.instruments_list.addItem(display_name)
-
-    def _on_instrument_selected(self):
-        """Обработка выбора прибора"""
-        current_item = self.instruments_list.currentItem()
-        if not current_item:
-            return
-
-        # Получение параметров прибора
-        from geoadjust.core.adjustment.instruments import InstrumentLibrary
-
-        library = InstrumentLibrary()
-        instrument_name = current_item.text().lower().replace(' ', '_')
-        instrument = library.get_instrument(instrument_name)
-
-        # Заполнение полей
-        self.angular_accuracy_spin.setValue(instrument.angular_accuracy)
-        self.angular_repeatability_spin.setValue(instrument.angular_repeatability)
-        self.distance_accuracy_a_spin.setValue(instrument.distance_accuracy_a)
-        self.distance_accuracy_b_spin.setValue(instrument.distance_accuracy_b)
-        self.leveling_accuracy_spin.setValue(instrument.leveling_accuracy)
-
-    def _add_instrument(self):
-        """Добавление нового прибора"""
-        from PyQt5.QtWidgets import QInputDialog
-
-        name, ok = QInputDialog.getText(self, "Новый прибор", "Введите название прибора:")
-        if ok and name:
-            self.instruments_list.addItem(name.title())
-            self.instruments_list.setCurrentRow(self.instruments_list.count() - 1)
-
-    def _delete_instrument(self):
-        """Удаление прибора"""
-        current_row = self.instruments_list.currentRow()
-        if current_row >= 0:
-            from PyQt5.QtWidgets import QMessageBox
-
-            reply = QMessageBox.question(
-                self, "Подтверждение",
-                "Удалить выбранный прибор?",
-                QMessageBox.Yes | QMessageBox.No
-            )
-
-            if reply == QMessageBox.Yes:
-                self.instruments_list.takeItem(current_row)
-
-    def _save_instrument(self):
-        """Сохранение параметров прибора"""
-        current_item = self.instruments_list.currentItem()
-        if not current_item:
-            return
-
-        # Здесь можно сохранить параметры в файл или базу данных
-        # Пока просто выводим в лог
-        import logging
-        logger = logging.getLogger(__name__)
-
-        instrument_name = current_item.text()
-        logger.info(f"Сохранены параметры прибора: {instrument_name}")
-
-    def _create_colors_tab(self) -> QWidget:
-        """Создание вкладки настроек цветов"""
-        tab = QWidget()
-        layout = QFormLayout(tab)
+    def _load_to_ui(self):
+        c = self.config.get('crs', {})
+        self.crs_combo.setCurrentText(c.get('base_crs', 'SK42'))
+        self.zone_spin.setValue(c.get('zone', 7))
+        self.ellipsoid_combo.setCurrentText(c.get('ellipsoid', 'Krasovsky1940'))
         
-        # Цвета элементов интерфейса
-        interface_group = QGroupBox("Цвета интерфейса")
-        interface_layout = QFormLayout(interface_group)
+        a = self.config.get('adjustment', {})
+        self.method_combo.setCurrentText(a.get('method', 'classic'))
+        self.max_iter_spin.setValue(a.get('max_iterations', 10))
+        self.conv_spin.setValue(a.get('convergence', 1e-6))
+        self.robust_check.setChecked(a.get('robust', False))
         
-        self.bg_color_btn = QPushButton("Фон")
-        self.bg_color_btn.setStyleSheet("background-color: white;")
-        self.bg_color_btn.clicked.connect(lambda: self._choose_color(self.bg_color_btn))
-        interface_layout.addRow("Цвет фона:", self.bg_color_btn)
+        p = self.config.get('preprocessing', {})
+        self.check_closure.setChecked(p.get('check_closure', True))
+        self.check_reciprocal.setChecked(p.get('check_reciprocal', True))
+        self.apply_corrections.setChecked(p.get('apply_corrections', True))
         
-        self.text_color_btn = QPushButton("Текст")
-        self.text_color_btn.setStyleSheet("background-color: black;")
-        self.text_color_btn.clicked.connect(lambda: self._choose_color(self.text_color_btn))
-        interface_layout.addRow("Цвет текста:", self.text_color_btn)
-        
-        self.selection_color_btn = QPushButton("Выделение")
-        self.selection_color_btn.setStyleSheet("background-color: #0078D7;")
-        self.selection_color_btn.clicked.connect(lambda: self._choose_color(self.selection_color_btn))
-        interface_layout.addRow("Цвет выделения:", self.selection_color_btn)
-        
-        self.highlight_color_btn = QPushButton("Подсветка")
-        self.highlight_color_btn.setStyleSheet("background-color: #FFFF00;")
-        self.highlight_color_btn.clicked.connect(lambda: self._choose_color(self.highlight_color_btn))
-        interface_layout.addRow("Цвет подсветки:", self.highlight_color_btn)
-        
-        layout.addRow(interface_group)
-        
-        # Цвета статусов
-        status_group = QGroupBox("Цвета статусов")
-        status_layout = QFormLayout(status_group)
-        
-        self.success_color_btn = QPushButton("Успех")
-        self.success_color_btn.setStyleSheet("background-color: green;")
-        self.success_color_btn.clicked.connect(lambda: self._choose_color(self.success_color_btn))
-        status_layout.addRow("Успешное выполнение:", self.success_color_btn)
-        
-        self.warning_color_btn = QPushButton("Предупреждение")
-        self.warning_color_btn.setStyleSheet("background-color: orange;")
-        self.warning_color_btn.clicked.connect(lambda: self._choose_color(self.warning_color_btn))
-        status_layout.addRow("Предупреждение:", self.warning_color_btn)
-        
-        self.error_color_btn = QPushButton("Ошибка")
-        self.error_color_btn.setStyleSheet("background-color: red;")
-        self.error_color_btn.clicked.connect(lambda: self._choose_color(self.error_color_btn))
-        status_layout.addRow("Ошибка:", self.error_color_btn)
-        
-        layout.addRow(status_group)
-        
-        # QFormLayout не имеет addStretch, используем spacer
-        from PyQt5.QtWidgets import QSpacerItem, QSizePolicy
-        spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        layout.addItem(spacer)
-        
-        return tab
-    
-    def _choose_color(self, button: QPushButton):
-        """Выбор цвета через диалог"""
-        current_color = button.styleSheet().split("background-color: ")[1].split(";")[0]
-        color = QColorDialog.getColor(QColor(current_color), self, "Выберите цвет")
-        
-        if color.isValid():
-            button.setStyleSheet(f"background-color: {color.name()};")
-    
-    def _load_settings(self):
-        """Загрузка настроек из конфигурации"""
-        from PyQt5.QtCore import QSettings
-        
-        settings = QSettings("GeoAdjustPro", "Settings")
-        
-        # Загрузка общих настроек
-        self.language_combo.setCurrentIndex(settings.value("general/language_index", 0, type=int))
-        self.interface_type_combo.setCurrentIndex(settings.value("general/interface_type_index", 0, type=int))
-        self.theme_combo.setCurrentIndex(settings.value("general/theme_index", 0, type=int))
-        self.autosave_check.setChecked(settings.value("general/autosave_enabled", True, type=bool))
-        self.autosave_interval_spin.setValue(settings.value("general/autosave_interval", 5, type=int))
-        self.recent_projects_spin.setValue(settings.value("general/recent_projects_count", 10, type=int))
-        self.splash_check.setChecked(settings.value("general/show_splash", True, type=bool))
-        
-        # Загрузка настроек схемы
-        self.point_color_btn.setStyleSheet(f"background-color: {settings.value('scheme/point_color', 'red')};")
-        self.point_size_spin.setValue(settings.value("scheme/point_size", 8, type=int))
-        self.point_shape_combo.setCurrentIndex(settings.value("scheme/point_shape_index", 0, type=int))
-        self.ellipse_color_btn.setStyleSheet(f"background-color: {settings.value('scheme/ellipse_color', 'blue')};")
-        self.ellipse_opacity_spin.setValue(settings.value("scheme/ellipse_opacity", 0.5, type=float))
-        self.direction_color_btn.setStyleSheet(f"background-color: {settings.value('scheme/direction_color', 'green')};")
-        self.distance_color_btn.setStyleSheet(f"background-color: {settings.value('scheme/distance_color', 'orange')};")
-        
-        # Загрузка настроек таблиц
-        font_family = settings.value("tables/font_family", "Arial")
-        self.table_font_combo.setCurrentFont(QFont(font_family))
-        self.table_font_size_spin.setValue(settings.value("tables/font_size", 10, type=int))
-        self.alternate_rows_check.setChecked(settings.value("tables/alternate_rows", True, type=bool))
-        self.show_grid_check.setChecked(settings.value("tables/show_grid", True, type=bool))
-        self.show_headers_check.setChecked(settings.value("tables/show_headers", True, type=bool))
-        self.highlight_row_check.setChecked(settings.value("tables/highlight_row", True, type=bool))
-        self.confirm_delete_check.setChecked(settings.value("tables/confirm_delete", True, type=bool))
-        self.auto_save_edit_check.setChecked(settings.value("tables/auto_save_edit", False, type=bool))
-        
-        logger.info("Настройки программы загружены")
-    
-    def accept(self):
-        """Подтверждение изменений"""
-        # Сохранение настроек
-        self._save_settings()
-        super().accept()
-    
-    def _save_settings(self):
-        """Сохранение настроек"""
-        from PyQt5.QtCore import QSettings
-        
-        settings_dict = self._collect_settings()
-        qsettings = QSettings("GeoAdjustPro", "Settings")
-        
-        # Сохранение общих настроек
-        qsettings.setValue("general/language_index", self.language_combo.currentIndex())
-        qsettings.setValue("general/interface_type_index", self.interface_type_combo.currentIndex())
-        qsettings.setValue("general/theme_index", self.theme_combo.currentIndex())
-        qsettings.setValue("general/autosave_enabled", self.autosave_check.isChecked())
-        qsettings.setValue("general/autosave_interval", self.autosave_interval_spin.value())
-        qsettings.setValue("general/recent_projects_count", self.recent_projects_spin.value())
-        qsettings.setValue("general/show_splash", self.splash_check.isChecked())
-        
-        # Сохранение настроек схемы
-        qsettings.setValue("scheme/point_color", settings_dict['scheme']['point_color'])
-        qsettings.setValue("scheme/point_size", self.point_size_spin.value())
-        qsettings.setValue("scheme/point_shape_index", self.point_shape_combo.currentIndex())
-        qsettings.setValue("scheme/ellipse_color", settings_dict['scheme']['ellipse_color'])
-        qsettings.setValue("scheme/ellipse_opacity", self.ellipse_opacity_spin.value())
-        qsettings.setValue("scheme/direction_color", settings_dict['scheme']['direction_color'])
-        qsettings.setValue("scheme/distance_color", settings_dict['scheme']['distance_color'])
-        
-        # Сохранение настроек таблиц
-        qsettings.setValue("tables/font_family", self.table_font_combo.currentFont().family())
-        qsettings.setValue("tables/font_size", self.table_font_size_spin.value())
-        qsettings.setValue("tables/alternate_rows", self.alternate_rows_check.isChecked())
-        qsettings.setValue("tables/show_grid", self.show_grid_check.isChecked())
-        qsettings.setValue("tables/show_headers", self.show_headers_check.isChecked())
-        qsettings.setValue("tables/highlight_row", self.highlight_row_check.isChecked())
-        qsettings.setValue("tables/confirm_delete", self.confirm_delete_check.isChecked())
-        qsettings.setValue("tables/auto_save_edit", self.auto_save_edit_check.isChecked())
-        
-        qsettings.sync()
-        logger.info("Настройки программы сохранены")
-    
-    def _collect_settings(self) -> Dict[str, Any]:
-        """Сбор всех настроек в словарь"""
-        settings = {
-            "general": {
-                "language": self.language_combo.currentText(),
-                "interface_type": self.interface_type_combo.currentText(),
-                "theme": self.theme_combo.currentText(),
-                "autosave_enabled": self.autosave_check.isChecked(),
-                "autosave_interval": self.autosave_interval_spin.value(),
-                "recent_projects_count": self.recent_projects_spin.value(),
-                "show_splash": self.splash_check.isChecked()
-            },
-            "scheme": {
-                "point_color": self.point_color_btn.styleSheet().split("background-color: ")[1].split(";")[0],
-                "point_size": self.point_size_spin.value(),
-                "point_shape": self.point_shape_combo.currentText(),
-                "ellipse_color": self.ellipse_color_btn.styleSheet().split("background-color: ")[1].split(";")[0],
-                "ellipse_opacity": self.ellipse_opacity_spin.value(),
-                "direction_color": self.direction_color_btn.styleSheet().split("background-color: ")[1].split(";")[0],
-                "distance_color": self.distance_color_btn.styleSheet().split("background-color: ")[1].split(";")[0]
-            },
-            "tables": {
-                "font_family": self.table_font_combo.currentFont().family(),
-                "font_size": self.table_font_size_spin.value(),
-                "alternate_rows": self.alternate_rows_check.isChecked(),
-                "show_grid": self.show_grid_check.isChecked(),
-                "show_headers": self.show_headers_check.isChecked(),
-                "highlight_row": self.highlight_row_check.isChecked(),
-                "confirm_delete": self.confirm_delete_check.isChecked(),
-                "auto_save_edit": self.auto_save_edit_check.isChecked()
-            },
-            "colors": {
-                "background": self.bg_color_btn.styleSheet().split("background-color: ")[1].split(";")[0],
-                "text": self.text_color_btn.styleSheet().split("background-color: ")[1].split(";")[0],
-                "selection": self.selection_color_btn.styleSheet().split("background-color: ")[1].split(";")[0],
-                "highlight": self.highlight_color_btn.styleSheet().split("background-color: ")[1].split(";")[0],
-                "success": self.success_color_btn.styleSheet().split("background-color: ")[1].split(";")[0],
-                "warning": self.warning_color_btn.styleSheet().split("background-color: ")[1].split(";")[0],
-                "error": self.error_color_btn.styleSheet().split("background-color: ")[1].split(";")[0]
-            }
+        i = self.config.get('interface', {})
+        self.theme_combo.setCurrentText(i.get('theme', 'light'))
+        self.lang_combo.setCurrentText(i.get('language', 'ru'))
+        self.autosave_spin.setValue(i.get('autosave_interval', 5))
+
+    def _save_from_ui(self):
+        self.config['crs'] = {
+            'base_crs': self.crs_combo.currentText(),
+            'zone': self.zone_spin.value(),
+            'ellipsoid': self.ellipsoid_combo.currentText()
         }
-        
-        return settings
+        self.config['adjustment'] = {
+            'method': self.method_combo.currentText(),
+            'max_iterations': self.max_iter_spin.value(),
+            'convergence': self.conv_spin.value(),
+            'robust': self.robust_check.isChecked()
+        }
+        self.config['preprocessing'] = {
+            'check_closure': self.check_closure.isChecked(),
+            'check_reciprocal': self.check_reciprocal.isChecked(),
+            'apply_corrections': self.apply_corrections.isChecked()
+        }
+        self.config['interface'] = {
+            'theme': self.theme_combo.currentText(),
+            'language': self.lang_combo.currentText(),
+            'autosave_interval': self.autosave_spin.value()
+        }
+        self._save_config()
+
+    def _apply(self):
+        self._save_from_ui()
+        self.parent().statusBar().showMessage("Настройки применены", 3000)
+
+    def accept(self):
+        self._save_from_ui()
+        super().accept()

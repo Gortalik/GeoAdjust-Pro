@@ -30,31 +30,8 @@ class ImportWorker(QThread):
         self.options = options
     
     def run(self):
-        """Выполнение импорта"""
-        try:
-            self.progress_updated.emit(10, "Открытие файла...")
-            
-            if self.format_type == 'dat':
-                result = self._import_dat()
-            elif self.format_type == 'gsi':
-                result = self._import_gsi()
-            elif self.format_type == 'sdr':
-                result = self._import_sdr()
-            elif self.format_type == 'pos':
-                result = self._import_pos()
-            elif self.format_type == 'csv':
-                result = self._import_csv()
-            elif self.format_type == 'txt':
-                result = self._import_txt()
-            else:
-                raise ValueError(f"Неподдерживаемый формат: {self.format_type}")
-            
-            self.progress_updated.emit(100, "Импорт завершен")
-            self.import_finished.emit(result)
-            
-        except Exception as e:
-            logger.error(f"Ошибка импорта: {e}", exc_info=True)
-            self.import_error.emit(str(e))
+        """Выполнение импорта (больше не используется)"""
+        pass
     
     def _import_dat(self) -> Dict:
         """Импорт из формата DAT (цифровые нивелиры)"""
@@ -119,13 +96,9 @@ class ImportWorker(QThread):
         """Импорт из формата GSI (Leica)"""
         from geoadjust.io.formats.gsi import GSIParser
         from pathlib import Path
-        
-        self.progress_updated.emit(30, "Парсинг GSI файла...")
-        
+
         parser = GSIParser()
         data = parser.parse(Path(self.file_path))
-        
-        self.progress_updated.emit(80, "Обработка данных...")
         
         # Конвертация в формат, ожидаемый приложением
         points = []
@@ -191,13 +164,9 @@ class ImportWorker(QThread):
         """Импорт из формата SDR (Sokkia)"""
         from geoadjust.io.formats.sdr import SDRParser
         from pathlib import Path
-        
-        self.progress_updated.emit(30, "Парсинг SDR файла...")
-        
+
         parser = SDRParser()
         data = parser.parse(Path(self.file_path))
-        
-        self.progress_updated.emit(80, "Обработка данных...")
         
         # Конвертация в формат, ожидаемый приложением
         points = []
@@ -212,17 +181,63 @@ class ImportWorker(QThread):
         
         observations = []
         for obs in data.get('observations', []):
-            observations.append({
-                'from_point': getattr(obs, 'from_point', ''),
-                'to_point': getattr(obs, 'to_point', ''),
-                'type': getattr(obs, 'obs_type', 'direction'),
-                'value': getattr(obs, 'value', 0),
-                'sigma': getattr(obs, 'std_dev', 0.00005)
-            })
+            # Если это CombinedObservation, оставить как объект
+            if hasattr(obs, 'horizontal_angle') or hasattr(obs, 'zenith_angle') or hasattr(obs, 'slope_distance'):
+                observations.append(obs)
+            else:
+                # Обычное измерение
+                observations.append({
+                    'from_point': getattr(obs, 'from_point_id', ''),
+                    'to_point': getattr(obs, 'to_point_id', ''),
+                    'type': getattr(obs, 'obs_type', 'direction'),
+                    'value': getattr(obs, 'value', 0),
+                    'sigma': getattr(obs, 'sigma_apriori', 0.00005),
+                    'from_setup_id': getattr(obs, 'from_setup_id', ''),
+                    'face_position': getattr(obs, 'face_position', None)
+                })
         
+        # Конвертация сессий станций для UI
+        station_sessions = []
+        for setup in data.get('setups', []):
+            # Группируем измерения по этой установке (сравниваем setup_id)
+            # Для CombinedObservation используем from_setup_id
+            setup_observations = [obs for obs in observations if getattr(obs, 'from_setup_id', getattr(obs, 'setup_id', '')) == setup.setup_id]
+
+            # Конвертируем измерения в формат словарей для UI
+            setup_observations_ui = []
+            for obs in setup_observations:
+                # Для CombinedObservation используем правильные атрибуты
+                setup_observations_ui.append({
+                    'obs_type': getattr(obs, 'obs_type', ''),
+                    'from_point': getattr(obs, 'from_point_id', ''),
+                    'to_point': getattr(obs, 'to_point_id', ''),
+                    'value': getattr(obs, 'value', 0),
+                    'setup_id': getattr(obs, 'from_setup_id', ''),
+                    'face_position': getattr(obs, 'face_position', None),
+                    # Дополнительные поля для CombinedObservation
+                    'horizontal_angle': getattr(obs, 'horizontal_angle', None),
+                    'zenith_angle': getattr(obs, 'zenith_angle', None),
+                    'slope_distance': getattr(obs, 'slope_distance', None)
+                })
+
+            session_data = {
+                'session_id': setup.setup_id,
+                'station_name': setup.point_id,
+                'instrument_height': setup.instrument_height,
+                'target_height': setup.target_height,
+                'orientation_angle': setup.orientation_angle,
+                'temperature': getattr(setup, 'temperature', None),
+                'pressure': getattr(setup, 'pressure', None),
+                'num_observations': len(setup_observations),
+                'timestamp': setup.timestamp,
+                'observations': setup_observations_ui
+            }
+            station_sessions.append(session_data)
+
         return {
             'points': points,
             'observations': observations,
+            'station_sessions': station_sessions,
             'metadata': {'job_name': data.get('job_name', ''), 'encoding': data.get('encoding', '')}
         }
     
@@ -373,8 +388,6 @@ class ImportWorker(QThread):
 class ImportDialog(QDialog):
     """Диалог импорта данных"""
     
-    data_imported = pyqtSignal(dict)
-    
     def __init__(self, parent=None):
         super().__init__(parent)
         
@@ -430,7 +443,7 @@ class ImportDialog(QDialog):
         self.ok_btn.clicked.connect(self.accept)
         self.ok_btn.setEnabled(False)
         button_layout.addWidget(self.ok_btn)
-        
+
         cancel_btn = QPushButton("Отмена")
         cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(cancel_btn)
@@ -466,6 +479,7 @@ class ImportDialog(QDialog):
             "DAT (цифровые нивелиры)",
             "GSI (Leica)",
             "SDR (Sokkia)",
+            "Excel (Credo DAT)",
             "POS (RTKLIB GNSS)",
             "CSV (разделители запятыми)",
             "TXT (текстовый файл)"
@@ -633,8 +647,11 @@ class ImportDialog(QDialog):
         """Запуск импорта"""
         file_path = self.file_path_edit.text()
         if not file_path:
-            QMessageBox.warning(self, "Предупреждение", "Выберите файл для импорта")
+            # Показываем предупреждение в статусной строке вместо модального диалога
+            self.status_label.setText("Предупреждение: Выберите файл для импорта")
             return
+
+
         
         # Определение формата
         format_index = self.format_combo.currentIndex()
@@ -643,17 +660,25 @@ class ImportDialog(QDialog):
             1: 'dat',
             2: 'gsi',
             3: 'sdr',
-            4: 'pos',
-            5: 'csv',
-            6: 'txt'
+            4: 'excel',
+            5: 'pos',
+            6: 'csv',
+            7: 'txt'
         }
-        format_type = format_map[format_index]
-        
+        format_type = format_map.get(format_index, 'txt')
+
         # Автоопределение формата
         if format_type == 'auto':
             ext = Path(file_path).suffix.lower()
-            format_type = ext[1:] if ext else 'txt'
-        
+            if ext == '.xlsx' or ext == '.xls':
+                format_type = 'excel'
+            elif ext == '.gsi':
+                format_type = 'gsi'
+            elif ext == '.sdr':
+                format_type = 'sdr'
+            else:
+                format_type = ext[1:] if ext else 'txt'
+
         # Параметры импорта
         options = {
             'import_points': self.import_points_check.isChecked(),
@@ -662,16 +687,39 @@ class ImportDialog(QDialog):
             'update_existing': self.update_existing_check.isChecked()
         }
         
-        # Запуск рабочего потока
+        # Выполняем импорт синхронно в основном потоке
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
         self.import_btn.setEnabled(False)
-        
-        self.worker = ImportWorker(file_path, format_type, options)
-        self.worker.progress_updated.connect(self._on_progress_updated)
-        self.worker.import_finished.connect(self._on_import_finished)
-        self.worker.import_error.connect(self._on_import_error)
-        self.worker.start()
+
+        # Устанавливаем путь к файлу для методов импорта
+        self.file_path = file_path
+
+        try:
+            self._on_progress_updated(10, "Открытие файла...")
+
+            if format_type == 'dat':
+                result = self._import_dat()
+            elif format_type == 'gsi':
+                result = self._import_gsi()
+            elif format_type == 'sdr':
+                result = self._import_sdr()
+            elif format_type == 'excel':
+                result = self._import_excel()
+            elif format_type == 'pos':
+                result = self._import_pos()
+            elif format_type == 'csv':
+                result = self._import_csv()
+            elif format_type == 'txt':
+                result = self._import_txt()
+            else:
+                raise ValueError(f"Неподдерживаемый формат: {format_type}")
+
+            self._on_progress_updated(100, "Импорт завершен")
+            self._on_import_finished(result)
+
+        except Exception as e:
+            self._on_import_error(str(e))
     
     def _on_progress_updated(self, percent: int, message: str):
         """Обновление прогресса"""
@@ -681,34 +729,31 @@ class ImportDialog(QDialog):
     def _on_import_finished(self, data: Dict):
         """Завершение импорта"""
         self.imported_data = data
-        
+
         # Обновление предпросмотра
         self._update_preview(data)
-        
+
         # Обновление статистики
         points_count = len(data.get('points', []))
         observations_count = len(data.get('observations', []))
-        
+
         self.points_count_label.setText(f"Пунктов: {points_count}")
         self.observations_count_label.setText(f"Измерений: {observations_count}")
-        
+
         self.status_label.setText(f"Импорт завершен: {points_count} пунктов, {observations_count} измерений")
         self.ok_btn.setEnabled(True)
         self.import_btn.setEnabled(True)
-        
-        QMessageBox.information(
-            self,
-            "Успех",
-            f"Данные успешно импортированы:\n"
-            f"Пунктов: {points_count}\n"
-            f"Измерений: {observations_count}"
-        )
     
     def _on_import_error(self, error_msg: str):
         """Ошибка импорта"""
         self.status_label.setText(f"Ошибка: {error_msg}")
         self.import_btn.setEnabled(True)
         self.progress_bar.setVisible(False)
+
+        # Не показываем QMessageBox, чтобы избежать конфликта event loop
+        # Ошибка отображается в статусной строке
+
+
         
         QMessageBox.critical(self, "Ошибка", f"Ошибка импорта:\n{error_msg}")
     
@@ -731,15 +776,193 @@ class ImportDialog(QDialog):
         for obs in data.get('observations', [])[:50]:  # Первые 50
             row = self.preview_table.rowCount()
             self.preview_table.insertRow(row)
-            
+
+            # All observations are now dictionaries
+            obs_type = obs.get('type', obs.get('obs_type', ''))
+            from_point = obs.get('from_point', obs.get('from_point_id', ''))
+            to_point = obs.get('to_point', obs.get('to_point_id', ''))
+            value = obs.get('horizontal_angle', obs.get('value', 0))
+
             self.preview_table.setItem(row, 0, QTableWidgetItem("Измерение"))
-            self.preview_table.setItem(row, 1, QTableWidgetItem(obs.get('type', '')))
-            self.preview_table.setItem(row, 2, QTableWidgetItem(obs.get('from_point', '')))
-            self.preview_table.setItem(row, 3, QTableWidgetItem(obs.get('to_point', '')))
-            self.preview_table.setItem(row, 4, QTableWidgetItem(f"{obs.get('value', 0):.6f}"))
+            self.preview_table.setItem(row, 1, QTableWidgetItem(str(obs_type)))
+            self.preview_table.setItem(row, 2, QTableWidgetItem(str(from_point)))
+            self.preview_table.setItem(row, 3, QTableWidgetItem(str(to_point)))
+            self.preview_table.setItem(row, 4, QTableWidgetItem(f"{value:.6f}"))
         
         self.preview_table.resizeColumnsToContents()
-    
+
+    def _import_gsi(self) -> Dict:
+        """Импорт из формата GSI (Leica)"""
+        from geoadjust.io.formats.gsi import GSIParser
+        from pathlib import Path
+
+        parser = GSIParser()
+        data = parser.parse(Path(self.file_path))
+
+        # Конвертация в формат, ожидаемый приложением
+        points = []
+        for p in data.get('points', []):
+            points.append({
+                'name': p.get('point_id', ''),
+                'x': p.get('x', 0) or 0,
+                'y': p.get('y', 0) or 0,
+                'h': p.get('h', 0) or 0,
+                'type': p.get('point_type', 'free')
+            })
+
+        observations = []
+        for obs in data.get('observations', []):
+            if hasattr(obs, 'horizontal_angle') or hasattr(obs, 'zenith_angle') or hasattr(obs, 'slope_distance'):
+                observations.append(obs)
+            else:
+                observations.append({
+                    'from_point': getattr(obs, 'from_point_id', ''),
+                    'to_point': getattr(obs, 'to_point_id', ''),
+                    'type': getattr(obs, 'obs_type', 'direction'),
+                    'value': getattr(obs, 'value', 0),
+                    'from_setup_id': getattr(obs, 'from_setup_id', ''),
+                    'face_position': getattr(obs, 'face_position', None)
+                })
+
+        return {
+            'points': points,
+            'observations': observations,
+            'metadata': {'format': 'GSI'}
+        }
+
+    def _import_sdr(self) -> Dict:
+        """Импорт из формата SDR (Sokkia)"""
+        from geoadjust.io.formats.sdr import SDRParser
+        from pathlib import Path
+
+        parser = SDRParser()
+        data = parser.parse(Path(self.file_path))
+
+        # Конвертация в формат, ожидаемый приложением
+        points = []
+        for p in data.get('points', []):
+            points.append({
+                'name': p.get('point_id', ''),
+                'x': p.get('x', 0) or 0,
+                'y': p.get('y', 0) or 0,
+                'h': p.get('h', 0) or 0,
+                'type': p.get('point_type', 'free')
+            })
+
+        observations = []
+        for obs in data.get('observations', []):
+            # Always convert to dictionary format for consistency
+            obs_dict = {
+                'obs_id': getattr(obs, 'obs_id', ''),
+                'from_setup_id': getattr(obs, 'from_setup_id', ''),
+                'from_point_id': getattr(obs, 'from_point_id', ''),
+                'to_point_id': getattr(obs, 'to_point_id', ''),
+                'obs_type': getattr(obs, 'obs_type', 'combined'),
+                'face_position': getattr(obs, 'face_position', None),
+                'horizontal_angle': getattr(obs, 'horizontal_angle', None),
+                'zenith_angle': getattr(obs, 'zenith_angle', None),
+                'slope_distance': getattr(obs, 'slope_distance', None),
+                'raw_line': getattr(obs, 'raw_line', None)
+            }
+            observations.append(obs_dict)
+
+        return {
+            'points': points,
+            'observations': observations,
+            'station_sessions': data.get('station_sessions', []),
+            'metadata': {'format': 'SDR'}
+        }
+
+    def _import_dat(self) -> Dict:
+        """Импорт из формата DAT (цифровые нивелиры)"""
+        from geoadjust.io.formats.dat import DATParser
+        from pathlib import Path
+
+        parser = DATParser()
+        data = parser.parse(Path(self.file_path))
+
+        # Конвертация в формат, ожидаемый приложением
+        points = []
+        for p in data.get('points', []):
+            points.append({
+                'name': p.get('point_id', ''),
+                'x': p.get('x', 0) or 0,
+                'y': p.get('y', 0) or 0,
+                'h': p.get('h', 0) or 0,
+                'type': p.get('point_type', 'free')
+            })
+
+        observations = []
+        for obs in data.get('observations', []):
+            observations.append({
+                'from_point': getattr(obs, 'from_point_id', ''),
+                'to_point': getattr(obs, 'to_point_id', ''),
+                'type': getattr(obs, 'obs_type', 'direction'),
+                'value': getattr(obs, 'value', 0),
+                'from_setup_id': getattr(obs, 'from_setup_id', ''),
+                'face_position': getattr(obs, 'face_position', None)
+            })
+
+        return {
+            'points': points,
+            'observations': observations,
+            'metadata': {'format': 'DAT'}
+        }
+
+    def _import_excel(self) -> Dict:
+        """Импорт из формата Excel (Credo DAT)"""
+        print(f"DEBUG: Starting Excel import for file: {self.file_path}")
+
+        try:
+            from geoadjust.io.formats.credo_dat import CredoDATParser
+            from pathlib import Path
+
+            print("DEBUG: Creating CredoDATParser")
+            parser = CredoDATParser()
+            print(f"DEBUG: Parsing file {self.file_path}")
+
+            data = parser.parse(Path(self.file_path))
+            print(f"DEBUG: Parser returned: points={len(data.get('points', []))}, obs={len(data.get('observations', []))}")
+
+            # Конвертация в формат, ожидаемый приложением
+            points = []
+            for p in data.get('points', []):
+                points.append({
+                    'name': p.get('point_id', ''),
+                    'x': p.get('x', 0) or 0,
+                    'y': p.get('y', 0) or 0,
+                    'h': p.get('h', 0) or 0,
+                    'type': p.get('point_type', 'free')
+                })
+
+            observations = []
+            for obs in data.get('observations', []):
+                observations.append({
+                    'obs_type': obs.get('obs_type', ''),
+                    'from_point': obs.get('from_point', ''),
+                    'to_point': obs.get('to_point', ''),
+                    'value': obs.get('value', 0),
+                    'distance': obs.get('distance'),
+                    'instrument_height': obs.get('instrument_height'),
+                })
+
+            result = {
+                'points': points,
+                'observations': observations,
+                'station_sessions': data.get('station_sessions', []),
+                'metadata': {'format': 'Excel', 'type': 'leveling'}
+            }
+
+            return result
+
+        except Exception as e:
+            return {
+                'points': [],
+                'observations': [],
+                'station_sessions': [],
+                'metadata': {'format': 'Excel', 'error': str(e)}
+            }
+
     def get_imported_data(self) -> Optional[Dict]:
         """Получение импортированных данных"""
         return self.imported_data

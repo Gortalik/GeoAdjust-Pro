@@ -124,20 +124,26 @@ def test_sdr_parser():
         parser = SDRParser()
         try:
             result = parser.parse(sdr_file)
-            
+
             print(f"\n  Результаты парсинга:")
             print(f"    Формат: {result['format']}")
-            print(f"    Имя работы: {result['job_name']}")
-            print(f"    Кодировка: {result['encoding']}")
-            print(f"    Всего строк: {result['total_lines']}")
-            print(f"    Измерений: {result['num_observations']}")
-            print(f"    Пунктов: {result['num_points']}")
-            print(f"    Ошибок: {len(result['errors'])}")
+            print(f"    Имя работы: {result.get('job_name', 'N/A')}")
+            print(f"    Кодировка: {result.get('encoding', 'N/A')}")
+            print(f"    Всего строк: {result.get('total_lines', 0)}")
+            print(f"    Измерений: {result.get('num_observations', 0)}")
+            print(f"    Пунктов: {result.get('num_points', len(result.get('points', [])))}")
+            print(f"    Ошибок: {len(result.get('errors', []))}")
             
             if result['observations']:
                 print(f"\n  Первые 5 измерений:")
-                for i, obs in enumerate(result['observations'][:5], 1):
-                    print(f"    {i}. Тип: {obs.obs_type:20} | От: {obs.from_point:15} | К: {obs.to_point:15} | Значение: {obs.value:.6f}")
+                try:
+                    for i, obs in enumerate(result['observations'][:5], 1):
+                        # Для SDR CombinedObservation используем from_point_id и to_point_id
+                        from_point = getattr(obs, 'from_point_id', getattr(obs, 'from_point', 'UNKNOWN'))
+                        to_point = getattr(obs, 'to_point_id', getattr(obs, 'to_point', 'UNKNOWN'))
+                        print(f"    {i}. Тип: {obs.obs_type:20} | От: {from_point:15} | К: {to_point:15} | Значение: {obs.value:.6f}")
+                except Exception as e:
+                    print(f"    Ошибка при отображении измерений: {e}")
             
             if result['errors']:
                 print(f"\n  Первые 5 ошибок:")
@@ -152,11 +158,11 @@ def test_sdr_parser():
             results.append({
                 'file': str(sdr_file),
                 'success': result['success'],
-                'num_observations': result['num_observations'],
-                'num_points': result['num_points'],
-                'num_errors': len(result['errors'])
+                'num_observations': result.get('num_observations', 0),
+                'num_points': len(result.get('points', [])),
+                'num_errors': len(result.get('errors', []))
             })
-            
+
         except Exception as e:
             print(f"  ОШИБКА при парсинге: {e}")
             results.append({
@@ -262,16 +268,17 @@ def print_summary(gsi_results, sdr_results, dat_results):
         if not results:
             print("  Нет результатов")
             continue
-            
+
         for r in results:
             total_files += 1
-            status = "OK" if r.get('success', False) else "FAIL"
-            if r.get('success', False):
+            success = r.get('success', False)
+            status = "OK" if success else "FAIL"
+            if success:
                 total_success += 1
                 total_observations += r.get('num_observations', 0)
                 total_points += r.get('num_points', 0)
             total_errors += r.get('num_errors', 0)
-            
+
             print(f"  [{status}] {Path(r['file']).name}: "
                   f"измерений={r.get('num_observations', 0)}, "
                   f"пунктов={r.get('num_points', 0)}, "

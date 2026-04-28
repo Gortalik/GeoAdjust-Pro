@@ -180,22 +180,34 @@ class GADProject:
         with open(self.project_dir / "settings" / "project_card.json", 'w', encoding='utf-8') as f:
             json.dump(project_card, f, indent=2, ensure_ascii=False)
     
+    def _custom_json_encoder(self, obj):
+        """Custom JSON encoder для обработки enum значений и объектов"""
+        if hasattr(obj, 'value'):
+            # Это enum, возвращаем значение
+            return obj.value
+        elif hasattr(obj, '__dict__'):
+            # Это объект с атрибутами, конвертируем в dict
+            return obj.__dict__
+        else:
+            # Для других типов используем стандартную сериализацию
+            raise TypeError(f'Object of type {obj.__class__.__name__} is not JSON serializable')
+
     def _save_data(self):
         """Сохранение данных проекта"""
         import json
-        
+
         # Сохранение пунктов
         with open(self.project_dir / "data" / "points.json", 'w', encoding='utf-8') as f:
-            json.dump(self.data['points'], f, indent=2, ensure_ascii=False)
-        
+            json.dump(self.data['points'], f, indent=2, ensure_ascii=False, default=self._custom_json_encoder)
+
         # Сохранение измерений
         with open(self.project_dir / "data" / "observations.json", 'w', encoding='utf-8') as f:
-            json.dump(self.data['observations'], f, indent=2, ensure_ascii=False)
-        
+            json.dump(self.data['observations'], f, indent=2, ensure_ascii=False, default=self._custom_json_encoder)
+
         # Сохранение ходов
         with open(self.project_dir / "data" / "traverses.json", 'w', encoding='utf-8') as f:
-            json.dump(self.data['traverses'], f, indent=2, ensure_ascii=False)
-        
+            json.dump(self.data['traverses'], f, indent=2, ensure_ascii=False, default=self._custom_json_encoder)
+
         # Сохранение результатов уравнивания
         self._save_adjustment_results()
     

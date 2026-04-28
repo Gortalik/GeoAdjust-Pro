@@ -430,6 +430,69 @@ class ToleranceChecker:
 
         return violations
 
+    def check_all(self, observations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Упрощенная проверка допусков для списка измерений
+
+        Параметры:
+        - observations: список измерений
+
+        Возвращает:
+        - Список результатов проверок с полем 'passed'
+        """
+        results = []
+
+        # Упрощенные проверки для основных типов измерений
+        for obs in observations:
+            obs_type = obs.get('type', 'unknown')
+            value = obs.get('value', 0)
+
+            if obs_type == 'direction':
+                # Проверка направлений: должны быть в диапазоне 0-360°
+                passed = 0 <= value <= 360
+                description = f"Направление {value:.1f}° {'OK' if passed else 'вне диапазона'}"
+                results.append({
+                    'passed': passed,
+                    'description': description,
+                    'type': 'direction_range',
+                    'value': value
+                })
+
+            elif obs_type == 'zenith_angle':
+                # Проверка зенитных углов: должны быть в диапазоне 0-180°
+                passed = 0 <= value <= 180
+                description = f"Зенитный угол {value:.1f}° {'OK' if passed else 'вне диапазона'}"
+                results.append({
+                    'passed': passed,
+                    'description': description,
+                    'type': 'zenith_angle_range',
+                    'value': value
+                })
+
+            elif obs_type == 'slope_distance':
+                # Проверка расстояний: положительные значения до 10км
+                passed = 0 < value <= 10000
+                description = f"Расстояние {value:.1f}м {'OK' if passed else 'вне диапазона'}"
+                results.append({
+                    'passed': passed,
+                    'description': description,
+                    'type': 'distance_range',
+                    'value': value
+                })
+
+            elif obs_type == 'height_diff':
+                # Проверка превышений: разумные значения
+                passed = abs(value) <= 100  # до 100м превышения
+                description = f"Превышение {value:.1f}м {'OK' if passed else 'слишком большое'}"
+                results.append({
+                    'passed': passed,
+                    'description': description,
+                    'type': 'height_diff_range',
+                    'value': value
+                })
+
+        return results
+
     def get_tolerance_summary(self, violations: List[Dict]) -> Dict[str, Any]:
         """
         Получение сводки по нарушениям допусков

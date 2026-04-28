@@ -1,4 +1,4 @@
-с#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Проверка установки критических зависимостей для GeoAdjust Pro

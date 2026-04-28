@@ -140,14 +140,15 @@ class WeightBuilder:
         """
         # Получение прибора из библиотеки
         instrument = None
-        if obs.instrument_name and obs.instrument_name in self.instrument_library:
-            instrument = self.instrument_library[obs.instrument_name]
+        instrument_name = getattr(obs, 'instrument_name', None)
+        if instrument_name and instrument_name in self.instrument_library:
+            instrument = self.instrument_library[instrument_name]
         elif obs.sigma_apriori is not None:
             # Если указана априорная СКО в самом измерении
             return obs.sigma_apriori
         else:
             self.logger.warning(
-                f"Прибор {obs.instrument_name} не найден в библиотеке. "
+                f"Прибор {instrument_name or 'не указан'} не найден в библиотеке. "
                 f"Используется стандартная СКО для {obs.obs_type}."
             )
             return self._get_default_sigma(obs.obs_type, obs.value)

@@ -28,6 +28,12 @@ from PyQt5.QtGui import QIcon, QFont
 # Импорт центральной функции для работы с ресурсами
 from geoadjust.utils import get_resource_path
 
+# Импорт визуальных индикаторов
+from geoadjust.gui.visual_indicators import VisualIndicator
+
+# Импорт моделей данных
+from geoadjust.core.network.models import CombinedObservation
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,6 +74,7 @@ class MainWindow(QMainWindow):
         # Защита от рекурсивных вызовов
         self._updating_properties = False
         self._refreshing_data = False
+
         
         # Настройка окна
         self.setWindowTitle(self.config.window_title)
@@ -195,22 +202,14 @@ class MainWindow(QMainWindow):
         import_file_action.setShortcut("Ctrl+I")
         import_file_action.triggered.connect(self._import_file)
         data_menu.addAction(import_file_action)
-        
-        import_instrument_action = QAction("Импорт из прибора...", self)
-        import_instrument_action.triggered.connect(self._import_from_instrument)
-        data_menu.addAction(import_instrument_action)
-        
+
         data_menu.addSeparator()
-        
+
         # Экспорт
         export_file_action = QAction("Экспорт в файл...", self)
         export_file_action.setShortcut("Ctrl+E")
         export_file_action.triggered.connect(self._export_file)
         data_menu.addAction(export_file_action)
-        
-        export_credo_action = QAction("Экспорт в КРЕДО...", self)
-        export_credo_action.triggered.connect(self._export_to_credo)
-        data_menu.addAction(export_credo_action)
         
         # Меню Редактирование
         edit_menu = menu_bar.addMenu("Редактирование")
@@ -325,17 +324,27 @@ class MainWindow(QMainWindow):
         
         # Меню Отчёты
         report_menu = menu_bar.addMenu("Отчёты")
-        
+
         coordinate_schedule_action = QAction("Ведомость координат", self)
         coordinate_schedule_action.triggered.connect(self._coordinate_schedule)
         report_menu.addAction(coordinate_schedule_action)
-        
+
+        topology_schedule_action = QAction("Ведомость топологии сети", self)
+        topology_schedule_action.triggered.connect(self._topology_schedule)
+        report_menu.addAction(topology_schedule_action)
+
+        accuracy_schedule_action = QAction("Ведомость оценки точности", self)
+        accuracy_schedule_action.triggered.connect(self._accuracy_schedule)
+        report_menu.addAction(accuracy_schedule_action)
+
+        report_menu.addSeparator()
+
         correction_schedule_action = QAction("Ведомость поправок", self)
         correction_schedule_action.triggered.connect(self._correction_schedule)
         report_menu.addAction(correction_schedule_action)
-        
+
         report_menu.addSeparator()
-        
+
         gost_report_action = QAction("Отчёт по ГОСТ 7.32-2017", self)
         gost_report_action.triggered.connect(self._gost_report)
         report_menu.addAction(gost_report_action)
@@ -367,19 +376,17 @@ class MainWindow(QMainWindow):
             ("Сохранить", "save_project", "Ctrl+S", self._save_project),
         ])
         home_tab.add_group("Буфер обмена", [
-            ("Копировать", "copy", "Ctrl+C", None),
-            ("Вставить", "paste", "Ctrl+V", None),
+            ("Копировать", "copy", "Ctrl+C", self._copy_selected),
+            ("Вставить", "paste", "Ctrl+V", self._paste_data),
         ])
         
         # Вкладка "Данные"
         data_tab = self.ribbon.add_tab("Данные")
         data_tab.add_group("Импорт", [
-            ("Импорт из прибора", "import_from_instrument", None, self._import_from_instrument),
             ("Импорт файла", "import_file", None, self._import_file),
         ])
         data_tab.add_group("Экспорт", [
             ("Экспорт в файл", "export_file", None, self._export_file),
-            ("Экспорт в КРЕДО", "export_to_credo", None, self._export_to_credo),
         ])
         
         # Вкладка "Редактирование"
@@ -503,37 +510,37 @@ class MainWindow(QMainWindow):
     
     def _create_dock_widgets(self):
         """Создание док-виджетов"""
-        from .components.dock_widgets import PointsDockWidget, ObservationsDockWidget, TraversesDockWidget
-        from .components.tables import PointsTableView
+        from .components.dock_widgets import ObservationsDockWidget
         from .widgets.observations_table import ObservationsTableWidget
         from .components.plan_view import PlanGraphicsView
         from .components.log_widget import LogWidget
         from .components.properties_widget import PropertiesWidget
-        
+
         # Настройка углов для док-виджетов (убираем зазоры между панелями)
         self.setCorner(Qt.TopLeftCorner, Qt.LeftDockWidgetArea)
         self.setCorner(Qt.BottomLeftCorner, Qt.LeftDockWidgetArea)
         self.setCorner(Qt.TopRightCorner, Qt.RightDockWidgetArea)
         self.setCorner(Qt.BottomRightCorner, Qt.RightDockWidgetArea)
 
-        # Окно "Станции"
-        from .widgets.stations_widget import StationsDockContent
-        self.stations_dock = QDockWidget("Станции", self)
-        self.stations_dock.setObjectName("stationsDock")
-        self.stations_content = StationsDockContent(self)
-        self.stations_dock.setWidget(self.stations_content)
-        self.addDockWidget(Qt.LeftDockWidgetArea, self.stations_dock)
-        self.stations_dock.setMinimumWidth(250)
-        self.stations_dock.visibilityChanged.connect(self._on_stations_dock_visibility_changed)
+        # Объединенное левое окно "Станции / Ходы / Пункты ПВО"
+        from .widgets.left_panel_widget import LeftPanelWidget
+        self.left_panel_dock = QDockWidget("Данные", self)
+        self.left_panel_dock.setObjectName("leftPanelDock")
+        self.left_panel = LeftPanelWidget(self)
+        self.left_panel_dock.setWidget(self.left_panel)
+        self.traverses_tree = self.left_panel.courses_tree
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.left_panel_dock)
+        self.left_panel_dock.setMinimumWidth(300)
+        self.left_panel_dock.setVisible(True)
+        self.left_panel_dock.visibilityChanged.connect(self._on_left_panel_dock_visibility_changed)
 
-        # Окно "Пункты ПВО"
-        self.points_dock = PointsDockWidget("Пункты ПВО", self)
-        self.points_dock.setObjectName("pointsDock")
-        self.points_table = PointsTableView()
-        self.points_dock.setWidget(self.points_table)
-        self.addDockWidget(Qt.LeftDockWidgetArea, self.points_dock)
-        self.points_dock.setMinimumWidth(200)
-        self.points_dock.visibilityChanged.connect(self._on_points_dock_visibility_changed)
+        # Подключаем сигналы от левой панели
+        self.left_panel.station_selected.connect(self._on_station_selected_from_panel)
+        self.left_panel.course_selected.connect(self._on_course_selected_from_panel)
+
+        # Сохраняем ссылки для совместимости
+        self.stations_content = self.left_panel.get_stations_content()
+        self.points_table = self.left_panel.get_points_table()
         
         # Окно "Измерения" - с вкладками по типам
         self.observations_dock = ObservationsDockWidget("Измерения", self)
@@ -543,15 +550,6 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, self.observations_dock)
         self.observations_dock.setMinimumWidth(350)
         self.observations_dock.visibilityChanged.connect(self._on_observations_dock_visibility_changed)
-        
-        # Окно "Ходы и секции"
-        self.traverses_dock = TraversesDockWidget("Ходы и секции", self)
-        self.traverses_dock.setObjectName("traversesDock")
-        self.traverses_tree = QTreeWidget()
-        self.traverses_dock.setWidget(self.traverses_tree)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.traverses_dock)
-        self.traverses_dock.setMinimumWidth(200)
-        self.traverses_dock.visibilityChanged.connect(self._on_traverses_dock_visibility_changed)
         
         # План - центральный виджет
         self.plan_view = PlanGraphicsView()
@@ -566,74 +564,109 @@ class MainWindow(QMainWindow):
         self.log_dock.setMinimumHeight(100)
         self.log_dock.visibilityChanged.connect(self._on_log_dock_visibility_changed)
         
-        # Окно "Свойства/История" - с вкладками
+        # Окно "Свойства/История" - большое окно справа
         self.properties_dock = QDockWidget("Свойства", self)
         self.properties_dock.setObjectName("propertiesDock")
         from .components.history_widget import PropertiesHistoryTabWidget
         self.properties_history = PropertiesHistoryTabWidget(self)
         self.properties_dock.setWidget(self.properties_history)
         self.addDockWidget(Qt.RightDockWidgetArea, self.properties_dock)
-        self.properties_dock.setMinimumWidth(200)
+        self.properties_dock.setMinimumWidth(400)  # Увеличенная ширина
+        self.properties_dock.setMinimumHeight(600)  # Увеличенная высота
         self.properties_dock.visibilityChanged.connect(self._on_properties_dock_visibility_changed)
         
         # Ссылки на вложенные виджеты для совместимости
         self.properties_widget = self.properties_history.properties_widget
         self.history_widget = self.properties_history.history_widget
+
+        # Данные ходов для левой панели
+        self.leveling_courses = []
         
         # Настройка размеров док-виджетов при запуске
         self.resizeDocks(
-            [self.stations_dock, self.points_dock, self.observations_dock, self.traverses_dock, self.properties_dock],
-            [200, 200, 250, 250, 250],
+            [self.left_panel_dock, self.observations_dock, self.properties_dock],
+            [300, 350, 400],
             Qt.Horizontal
         )
         
         # Подключение сигналов выбора к виджету свойств
         self._connect_properties_signals()
-        
-        # Подключение сигнала изменения свойств
-        self.properties_widget.properties_changed.connect(self._on_properties_changed)
-        
-        # Подключение сигналов истории
-        self.history_widget.undo_requested.connect(self._on_history_undo)
-        self.history_widget.redo_requested.connect(self._on_history_redo)
-        self.history_widget.jump_to_entry.connect(self._on_jump_to_entry)
+
+        # Временно отключим остальные сигналы для безопасности
+        # self.properties_widget.properties_changed.connect(self._on_properties_changed)
+        # self.history_widget.undo_requested.connect(self._on_history_undo)
+        # self.history_widget.redo_requested.connect(self._on_history_redo)
+        # self.history_widget.jump_to_entry.connect(self._on_jump_to_entry)
     
     def _connect_properties_signals(self):
         """Подключение сигналов выбора к виджету свойств"""
-        # Сигналы от таблицы пунктов
-        if hasattr(self, 'points_table'):
-            # PointsTableView имеет сигнал point_double_clicked
-            self.points_table.point_double_clicked.connect(self._on_point_selected)
-            # Также подключаем сигнал выбора строки
-            self.points_table.selectionModel().selectionChanged.connect(self._on_points_selection_changed)
+        # Сигнал от станций теперь работает через прямой вызов
+        pass
 
-        # Сигналы от таблицы измерений
-        if hasattr(self, 'observations_table'):
-            # ObservationsTableWidget имеет внутреннюю таблицу
-            obs_table = self.observations_table.table_view if hasattr(self.observations_table, 'table_view') else self.observations_table
-            if hasattr(obs_table, 'selectionModel'):
-                obs_table.selectionModel().selectionChanged.connect(self._on_observations_selection_changed)
+    def _convert_observations_to_objects(self, observations: List[Dict[str, Any]]) -> List[Any]:
+        """Конвертация словарей измерений обратно в объекты CombinedObservation
 
-        # Сигналы от виджета станций
-        if hasattr(self, 'stations_content'):
-            self.stations_content.station_selected.connect(self._on_station_selected)
-    
+        Args:
+            observations: Список словарей измерений из проекта
+
+        Returns:
+            Список объектов CombinedObservation или словарей для других типов
+        """
+        from geoadjust.io.formats.sdr import SDRObservation
+        from geoadjust.core.network.models import CombinedObservation
+
+        converted_observations = []
+
+        for obs in observations:
+            # Проверяем, является ли измерение CombinedObservation (судим по наличию специфичных полей)
+            if isinstance(obs, dict) and 'horizontal_angle' in obs and 'zenith_angle' in obs and 'slope_distance' in obs:
+                # Это CombinedObservation, конвертируем обратно в объект
+                combined_obs = CombinedObservation(
+                    obs_id=obs.get('obs_id', ''),
+                    from_setup_id=obs.get('from_setup_id', ''),
+                    from_point_id=obs.get('from_point_id', ''),
+                    to_point_id=obs.get('to_point_id', ''),
+                    face_position=obs.get('face_position'),
+                    horizontal_angle=obs.get('horizontal_angle'),
+                    zenith_angle=obs.get('zenith_angle'),
+                    slope_distance=obs.get('slope_distance'),
+                    raw_line=obs.get('raw_line')
+                )
+                converted_observations.append(combined_obs)
+            elif isinstance(obs, SDRObservation):
+                # Конвертируем SDRObservation в CombinedObservation
+                combined_obs = CombinedObservation(
+                    obs_id=getattr(obs, 'obs_type', 'sdr'),
+                    from_setup_id=getattr(obs, 'setup_id', ''),
+                    from_point_id=getattr(obs, 'from_point', ''),
+                    to_point_id=getattr(obs, 'to_point', ''),
+                    face_position=getattr(obs, 'face_position'),
+                    horizontal_angle=getattr(obs, 'horizontal_angle'),
+                    zenith_angle=getattr(obs, 'vertical_angle'),  # zenith_angle from vertical_angle
+                    slope_distance=getattr(obs, 'distance'),
+                    raw_line=getattr(obs, 'raw_line')
+                )
+                converted_observations.append(combined_obs)
+            else:
+                # Оставляем как есть (другие типы измерений)
+                converted_observations.append(obs)
+
+        return converted_observations
+
     def _on_point_selected(self, point_id: str):
         """Обработка выбора пункта"""
         self._show_point_properties(point_id)
 
-    def _on_station_selected(self, session_id: str):
-        """Обработка выбора станции"""
-        if not session_id:
-            # Сброс фильтра - показать все измерения
-            if hasattr(self, 'observations_table'):
-                self.observations_table.filter_by_station_session(None)
-            self.statusBar().showMessage("Показаны все измерения", 2000)
-            return
 
-        # Фильтрация измерений по выбранной станции
-        if hasattr(self, 'observations_table'):
-            self.observations_table.filter_by_station_session(session_id)
+
+        # Автоматическое переключение на вкладку тахеометрии
+        # Принудительно переключимся на вкладку тахеометрии
+        if hasattr(self, 'observations_table') and hasattr(self.observations_table, 'tabs'):
+            for i in range(self.observations_table.tabs.count()):
+                tab_text = self.observations_table.tabs.tabText(i)
+                if "тахеометр" in tab_text.lower():
+                    self.observations_table.tabs.setCurrentIndex(i)
+                    break
 
         # Обновление статуса
         station_name = session_id.split('_S')[0] if '_S' in session_id else session_id
@@ -1168,11 +1201,48 @@ class MainWindow(QMainWindow):
         logger.info("=" * 60)
         logger.info("ЗАПУСК КЛАССИЧЕСКОГО МНК УРАВНИВАНИЯ")
         logger.info("=" * 60)
-        
+
+        self.current_adjustment_method = 'classic'
+
+        # Проверка 1: Наличие открытого проекта
         if not self.current_project:
             logger.error("Нет открытого проекта для уравнивания")
             QMessageBox.warning(self, "Предупреждение", "Нет открытого проекта")
             return
+
+        # Проверка 2: Наличие данных в проекте
+        observations = self.current_project.get_observations()
+        points = self.current_project.get_points()
+
+        if not observations:
+            logger.error("В проекте нет измерений")
+            QMessageBox.warning(self, "Предупреждение", "В проекте нет измерений.\n\nВыполните импорт данных из файла или добавьте измерения вручную.")
+            return
+
+        if not points:
+            logger.error("В проекте нет пунктов")
+            QMessageBox.warning(self, "Предупреждение", "В проекте нет пунктов.\n\nВыполните импорт данных из файла или добавьте пункты вручную.")
+            return
+
+        # Автоматическая предобработка данных перед уравниванием
+        if not hasattr(self.current_project, 'preprocessing_completed') or not self.current_project.preprocessing_completed:
+            logger.info("Выполняется автоматическая предобработка перед уравниванием...")
+
+            # Выполняем предобработку синхронно
+            try:
+                from geoadjust.core.preprocessing.module import PreprocessingModule
+                preprocessing = PreprocessingModule(self.current_project)
+                results = preprocessing.run_all_stages()
+
+                if results and results.get('success'):
+                    self.current_project.preprocessing_completed = True
+                    self.current_project.preprocessing_results = results
+                    logger.info("Предобработка выполнена успешно")
+                else:
+                    logger.warning("Предобработка завершилась с предупреждениями")
+            except Exception as e:
+                logger.error(f"Ошибка при предобработке: {e}")
+                QMessageBox.warning(self, "Предупреждение", f"Ошибка при автоматической предобработке:\n{str(e)}")
         
         try:
             logger.info(f"Текущий проект: {self.current_project.name}")
@@ -1248,30 +1318,85 @@ class MainWindow(QMainWindow):
     
     def _on_adjustment_finished(self, result: Dict[str, Any]):
         """Обработчик завершения уравнивания"""
+        # Добавление метода в результат
+        if hasattr(self, 'current_adjustment_method'):
+            result['method'] = self.current_adjustment_method
+            delattr(self, 'current_adjustment_method')
+
         # Сохранение результатов в проект
         if self.current_project:
             self.current_project.save_adjustment_result(result)
-        
+
         # Обновление интерфейса с результатами
         self._update_ui_with_results(result)
-        
+
         sigma0 = result.get('sigma0', 0)
-        self.statusBar().showMessage(f"Уравнивание выполнено: μ₀ = {sigma0:.6f}", 5000)
+        method = result.get('method', 'unknown')
+        method_name = 'классическое' if method == 'classic' else 'робастное' if method == 'robust' else method
+        self.statusBar().showMessage(f"Уравнивание выполнено ({method_name}): μ₀ = {sigma0:.6f}", 5000)
+
+        # Добавление записи в историю
+        self._add_history_entry('adjustment_completed', f"Уравнивание выполнено ({method_name}): μ₀ = {sigma0:.6f}", result)
+
         self._reset_ui_state()
     
     def _on_adjustment_error(self, error_msg: str):
         """Обработчик ошибки уравнивания"""
+        # Очистка метода уравнивания при ошибке
+        if hasattr(self, 'current_adjustment_method'):
+            delattr(self, 'current_adjustment_method')
+
         QMessageBox.critical(self, "Ошибка", f"Ошибка при уравнивании:\n{error_msg}")
         self.statusBar().showMessage("Ошибка уравнивания", 3000)
         self._reset_ui_state()
     
     def _adjust_robust(self):
         """Робастное уравнивание"""
-        logger.info("Запуск робастного уравнивания")
-        
+        logger.info("=" * 60)
+        logger.info("ЗАПУСК РОБАСТНОГО УРАВНИВАНИЯ")
+        logger.info("=" * 60)
+
+        self.current_adjustment_method = 'robust'
+
+        # Проверка 1: Наличие открытого проекта
         if not self.current_project:
+            logger.error("Нет открытого проекта для уравнивания")
             QMessageBox.warning(self, "Предупреждение", "Нет открытого проекта")
             return
+
+        # Проверка 2: Наличие данных в проекте
+        observations = self.current_project.get_observations()
+        points = self.current_project.get_points()
+
+        if not observations:
+            logger.error("В проекте нет измерений")
+            QMessageBox.warning(self, "Предупреждение", "В проекте нет измерений.\n\nВыполните импорт данных из файла или добавьте измерения вручную.")
+            return
+
+        if not points:
+            logger.error("В проекте нет пунктов")
+            QMessageBox.warning(self, "Предупреждение", "В проекте нет пунктов.\n\nВыполните импорт данных из файла или добавьте пункты вручную.")
+            return
+
+        # Автоматическая предобработка данных перед уравниванием
+        if not hasattr(self.current_project, 'preprocessing_completed') or not self.current_project.preprocessing_completed:
+            logger.info("Выполняется автоматическая предобработка перед робастным уравниванием...")
+
+            # Выполняем предобработку синхронно
+            try:
+                from geoadjust.core.preprocessing.module import PreprocessingModule
+                preprocessing = PreprocessingModule(self.current_project)
+                results = preprocessing.run_all_stages()
+
+                if results and results.get('success'):
+                    self.current_project.preprocessing_completed = True
+                    self.current_project.preprocessing_results = results
+                    logger.info("Предобработка выполнена успешно")
+                else:
+                    logger.warning("Предобработка завершилась с предупреждениями")
+            except Exception as e:
+                logger.error(f"Ошибка при предобработке: {e}")
+                QMessageBox.warning(self, "Предупреждение", f"Ошибка при автоматической предобработке:\n{str(e)}")
         
         try:
             self.mode_label.setText("Режим: робастное уравнивание")
@@ -1329,6 +1454,23 @@ class MainWindow(QMainWindow):
         self.mode_label.setText("Режим: ожидание")
         self.progress_bar.setVisible(False)
         self.progress_bar.setValue(0)
+
+    def _show_status_indicator(self, status: str, message: str, duration: int = 3000):
+        """Показать статусный индикатор в статусной строке"""
+        # Создаем виджет индикатора
+        indicator = VisualIndicator.create_status_indicator(status, message)
+
+        # Добавляем в статусную строку (временно, заменяя обычное сообщение)
+        # Для постоянного отображения можно добавить отдельный виджет в статусную строку
+        self.statusBar().showMessage(message, duration)
+
+        # В будущем можно добавить постоянный виджет:
+        # if not hasattr(self, 'status_indicator'):
+        #     self.status_indicator = QWidget()
+        #     self.statusBar().addPermanentWidget(self.status_indicator)
+        #
+        # layout = QHBoxLayout(self.status_indicator)
+        # layout.addWidget(indicator)
     
     def _update_ui_with_results(self, result: Dict[str, Any]):
         """Обновление интерфейса результатами уравнивания
@@ -1344,7 +1486,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'observations_table') and 'residuals' in result:
             self.observations_table.update_residuals(result['residuals'])
         
-        # Перерисовка плана
+        # Перерисовка плана с результатами уравнивания
         if hasattr(self, 'plan_view'):
             self.plan_view.draw_network(self.current_project)
             
@@ -1364,38 +1506,116 @@ class MainWindow(QMainWindow):
         
         try:
             from .dialogs.import_dialog import ImportDialog
-            
+
             dialog = ImportDialog(self)
             if dialog.exec_() == QDialog.Accepted:
                 imported_data = dialog.get_imported_data()
-                
                 if imported_data:
-                    # Добавление данных в проект
-                    points = imported_data.get('points', [])
-                    observations = imported_data.get('observations', [])
-                    
-                    # Обновление проекта
-                    if points:
-                        for point in points:
-                            self.current_project.add_point(point)
-                    
-                    if observations:
-                        for obs in observations:
-                            self.current_project.add_observation(obs)
-                    
-                    # Обновление интерфейса
-                    self._refresh_data_views()
+                    self._process_imported_data(imported_data)
 
-                    # Обновление станций, если есть данные о сессиях
-                    station_sessions = imported_data.get('station_sessions', [])
-                    if station_sessions:
-                        self._update_stations_view(station_sessions)
+        except Exception as e:
+            logger.error(f"Ошибка при открытии диалога импорта: {e}", exc_info=True)
+            QMessageBox.critical(self, "Ошибка", f"Не удалось открыть диалог импорта:\n{str(e)}")
 
-                    logger.info(f"Импортировано: {len(points)} пунктов, {len(observations)} измерений")
-                    self.statusBar().showMessage(
-                        f"Импортировано: {len(points)} пунктов, {len(observations)} измерений",
-                        5000
-                    )
+    def _process_imported_data(self, imported_data):
+        """Обработка импортированных данных"""
+        try:
+            # Проверяем, что проект существует
+            if not self.current_project:
+                return
+
+            # Добавление данных в проект
+            points = imported_data.get('points', [])
+            observations = imported_data.get('observations', [])
+
+            # Обновление проекта
+            if points:
+                for point in points:
+                    self.current_project.add_point(point)
+
+            if observations:
+                for obs in observations:
+                    # Конвертируем объект Observation в словарь
+                    try:
+                        # Для dataclass используем asdict
+                        from dataclasses import asdict
+                        obs_dict = asdict(obs)
+                    except (TypeError, ImportError):
+                        # Для обычных объектов используем vars или __dict__
+                        if hasattr(obs, '__dict__'):
+                            obs_dict = vars(obs)
+                        elif hasattr(obs, '__annotations__'):
+                            obs_dict = {k: getattr(obs, k) for k in obs.__annotations__}
+                        else:
+                            obs_dict = dict(obs) if hasattr(obs, 'keys') else obs
+
+                    self.current_project.add_observation(obs_dict)
+
+            # Обновление интерфейса
+            self._refresh_data_views()
+
+            # Обновление станций, если есть данные о сессиях
+            station_sessions = imported_data.get('station_sessions', [])
+            if not station_sessions and imported_data.get('format') == 'SDR':
+                # Для SDR создать station_sessions из setups
+                setups = imported_data.get('setups', [])
+                station_sessions = []
+                for setup in setups:
+                    session = {
+                        'session_id': getattr(setup, 'setup_id', f"SETUP_{len(station_sessions)}"),
+                        'station_name': getattr(setup, 'station_name', 'UNKNOWN'),
+                        'instrument_height': getattr(setup, 'instrument_height', None),
+                        'temperature': getattr(setup, 'temperature', None),
+                        'pressure': getattr(setup, 'pressure', None),
+                        'num_observations': len([obs for obs in observations if getattr(obs, 'setup_id', None) == getattr(setup, 'setup_id', None)])
+                    }
+                    station_sessions.append(session)
+                imported_data['station_sessions'] = station_sessions
+
+            if station_sessions and hasattr(self, '_update_stations_view'):
+                self._update_stations_view(station_sessions)
+
+            # Обновление ходов, если есть данные о ходах
+            leveling_courses = imported_data.get('leveling_courses', [])
+            if leveling_courses:
+                # Конвертируем измерения ходов в словари
+                converted_courses = []
+                for course in leveling_courses:
+                    converted_course = {
+                        'course_id': course['course_id'],
+                        'section_number': course.get('section_number', 1),
+                        'stations': course.get('stations', []),
+                        'measurements': course.get('measurements', [])
+                    }
+                    converted_courses.append(converted_course)
+
+                self.leveling_courses = converted_courses
+                self.left_panel.update_courses(converted_courses)
+
+                # Добавляем leveling_courses в preprocessing_result для отображения в дереве
+                if not hasattr(self.current_project, 'preprocessing_result') or self.current_project.preprocessing_result is None:
+                    self.current_project.preprocessing_result = {}
+                if 'traverses' not in self.current_project.preprocessing_result:
+                    self.current_project.preprocessing_result['traverses'] = {}
+                self.current_project.preprocessing_result['traverses']['sections'] = converted_courses
+
+                # Обновляем дерево ходов
+                if hasattr(self, '_update_traverses_tree'):
+                    self._update_traverses_tree()
+
+            # Обновление левой панели после импорта
+            self._refresh_data_views()
+
+            # Обновление станций в левой панели
+            if station_sessions:
+                if hasattr(self.left_panel, 'update_stations'):
+                    self.left_panel.update_stations(station_sessions)
+
+            logger.info(f"Импортировано: {len(points)} пунктов, {len(observations)} измерений")
+            self.statusBar().showMessage(
+                f"Импортировано: {len(points)} пунктов, {len(observations)} измерений",
+                5000
+            )
                 
         except Exception as e:
             logger.error(f"ОШИБКА при импорте файла: {e}", exc_info=True)
@@ -1422,51 +1642,110 @@ class MainWindow(QMainWindow):
             logger.error(f"ОШИБКА при экспорте файла: {e}", exc_info=True)
             QMessageBox.critical(self, "Ошибка", f"Ошибка при экспорте:\n{str(e)}")
     
-    def _export_to_credo(self):
-        """Экспорт данных в КРЕДО"""
-        logger.info("=" * 60)
-        logger.info("ЗАПУСК ЭКСПОРТА ДАННЫХ В КРЕДО")
-        logger.info("=" * 60)
-        
+
+    def _copy_selected(self):
+        """Копирование выбранных данных"""
         if not self.current_project:
-            logger.warning("Нет открытого проекта для экспорта в КРЕДО")
             QMessageBox.warning(self, "Предупреждение", "Нет открытого проекта")
             return
-        
+
+        # Копирование из текущей активной таблицы
+        copied_data = []
+
+        # Проверяем таблицу пунктов
+        if hasattr(self, 'points_table'):
+            selected_rows = set()
+            for index in self.points_table.selectionModel().selectedRows():
+                selected_rows.add(index.row())
+
+            if selected_rows:
+                points = self.current_project.get_points()
+                for row in selected_rows:
+                    if row < len(points):
+                        point_data = list(points.values())[row]
+                        copied_data.append({
+                            'type': 'point',
+                            'data': point_data
+                        })
+
+        # Проверяем таблицу измерений
+        if hasattr(self, 'observations_table') and hasattr(self.observations_table, 'get_selected_observations'):
+            selected_obs = self.observations_table.get_selected_observations()
+            if selected_obs:
+                for obs in selected_obs:
+                    copied_data.append({
+                        'type': 'observation',
+                        'data': obs
+                    })
+
+        if copied_data:
+            import json
+            # Сохраняем в буфер обмена
+            clipboard_data = json.dumps(copied_data)
+            from PyQt5.QtWidgets import QApplication
+            clipboard = QApplication.clipboard()
+            clipboard.setText(clipboard_data)
+
+            self.statusBar().showMessage(f"Скопировано {len(copied_data)} элементов", 2000)
+            logger.info(f"Скопировано {len(copied_data)} элементов в буфер обмена")
+        else:
+            self.statusBar().showMessage("Ничего не выбрано для копирования", 2000)
+
+    def _paste_data(self):
+        """Вставка данных из буфера обмена"""
+        if not self.current_project:
+            QMessageBox.warning(self, "Предупреждение", "Нет открытого проекта")
+            return
+
+        from PyQt5.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        clipboard_text = clipboard.text()
+
+        if not clipboard_text:
+            self.statusBar().showMessage("Буфер обмена пуст", 2000)
+            return
+
         try:
-            file_path, _ = QFileDialog.getSaveFileName(
-                self,
-                "Экспорт в КРЕДО",
-                "",
-                "CREDO files (*.tpf);;"
-                "Все файлы (*)"
-            )
-            
-            if file_path:
-                logger.info(f"Выбран путь для экспорта в КРЕДО: {file_path}")
-                # TODO: Реализация экспорта в формат КРЕДО
-                QMessageBox.information(self, "Экспорт в КРЕДО", f"Данные будут экспортированы в:\n{file_path}\n\nФункция экспорта в КРЕДО в разработке")
-                logger.info("Экспорт в КРЕДО завершен (заглушка)")
-                
-        except Exception as e:
-            logger.error(f"ОШИБКА при экспорте в КРЕДО: {e}", exc_info=True)
-            QMessageBox.critical(self, "Ошибка", f"Ошибка при экспорте в КРЕДО:\n{str(e)}")
-    
-    def _import_from_instrument(self):
-        """Импорт данных из прибора"""
-        logger.info("=" * 60)
-        logger.info("ЗАПУСК ИМПОРТА ДАННЫХ ИЗ ПРИБОРА")
-        logger.info("=" * 60)
-        
-        try:
-            # TODO: Диалог выбора прибора и порта
-            QMessageBox.information(self, "Импорт из прибора", "Функция импорта из прибора в разработке")
-            logger.info("Импорт из прибора завершен (заглушка)")
-            
-        except Exception as e:
-            logger.error(f"ОШИБКА при импорте из прибора: {e}", exc_info=True)
-            QMessageBox.critical(self, "Ошибка", f"Ошибка при импорте из прибора:\n{str(e)}")
-    
+            import json
+            pasted_data = json.loads(clipboard_text)
+
+            points_added = 0
+            observations_added = 0
+
+            for item in pasted_data:
+                if item['type'] == 'point':
+                    # Генерируем новое имя для пункта
+                    original_name = item['data'].get('name', 'POINT')
+                    new_name = original_name
+                    counter = 1
+                    while new_name in self.current_project.get_points():
+                        new_name = f"{original_name}_{counter}"
+                        counter += 1
+
+                    point_data = item['data'].copy()
+                    point_data['name'] = new_name
+                    self.current_project.add_point(point_data)
+                    points_added += 1
+
+                elif item['type'] == 'observation':
+                    obs_data = item['data'].copy()
+                    # Генерируем новый ID для измерения
+                    obs_data['obs_id'] = f"COPY_{len(self.current_project.get_observations())}"
+                    self.current_project.add_observation(obs_data)
+                    observations_added += 1
+
+            if points_added or observations_added:
+                self._refresh_data_views()
+                self.statusBar().showMessage(f"Вставлено: {points_added} пунктов, {observations_added} измерений", 3000)
+                logger.info(f"Вставлено: {points_added} пунктов, {observations_added} измерений")
+            else:
+                self.statusBar().showMessage("Ничего не вставлено", 2000)
+
+        except (json.JSONDecodeError, KeyError) as e:
+            self.statusBar().showMessage("Ошибка вставки данных", 2000)
+            logger.error(f"Ошибка вставки данных: {e}")
+
+
     def _add_point(self):
         """Добавление нового пункта"""
         if not self.current_project:
@@ -1579,178 +1858,11 @@ class MainWindow(QMainWindow):
 
             # Обновление таблицы измерений
             observations = self.current_project.get_observations()
+            logger.info(f"_refresh_data_views: got {len(observations)} observations from project")
             if observations and hasattr(self, 'observations_table'):
-                self.observations_table.update_data(observations)
-
-            # Обновление плана
-            if hasattr(self, 'plan_view'):
-                self.plan_view.draw_network(self.current_project)
-
-    def _update_stations_view(self, station_sessions: List[Dict[str, Any]]):
-        """Обновление представления станций"""
-        if hasattr(self, 'stations_content') and station_sessions:
-            self.stations_content.set_station_sessions(station_sessions)
-            logger.info(f"Обновлено представление станций: {len(station_sessions)} сессий")
-        elif hasattr(self, 'stations_dock') and hasattr(self.stations_dock, 'content'):
-            self.stations_dock.content.set_station_sessions(station_sessions)
-            logger.info(f"Обновлено представление станций: {len(station_sessions)} сессий")
-        
-        # Обновление дерева ходов и секций
-        if hasattr(self, 'traverses_tree'):
-            self._update_traverses_tree()
-    
-    def _update_traverses_tree(self):
-        """Обновление дерева ходов и секций из данных предобработки"""
-        if not hasattr(self, 'traverses_tree') or not self.current_project:
-            return
-        
-        tree = self.traverses_tree
-        tree.clear()
-        
-        # Получаем данные предобработки из проекта
-        preprocessing_result = getattr(self.current_project, 'preprocessing_result', None)
-        if not preprocessing_result:
-            # Если нет результатов предобработки, пробуем выполнить её
-            try:
-                from geoadjust.core.preprocessing.module import PreprocessingModule
-                
-                observations = self.current_project.get_observations()
-                if not observations:
-                    tree.addTopLevelItem(QTreeWidgetItem(["Нет данных для отображения"]))
-                    return
-                
-                preprocessor = PreprocessingModule()
-                results = preprocessor.run_preprocessing(observations)
-                
-                # Сохраняем результаты в проект
-                self.current_project.preprocessing_result = results
-                
-                preprocessing_result = results
-            except Exception as e:
-                logger.warning(f"Не удалось выполнить предобработку: {e}")
-                tree.addTopLevelItem(QTreeWidgetItem(["Ошибка предобработки"]))
-                return
-        
-        if not preprocessing_result:
-            tree.addTopLevelItem(QTreeWidgetItem(["Нет данных для отображения"]))
-            return
-        
-        # Корневой элемент "Тахеометрические ходы"
-        ts_item = QTreeWidgetItem(["Тахеометрические ходы"])
-        ts_icon = QIcon.fromTheme("applications-science")
-        if not ts_icon.isNull():
-            ts_item.setIcon(0, ts_icon)
-        
-        # traverses - это словарь {'traverses': [...], 'sections': [...], 'gnss_baselines': [...]}
-        traverses_data = preprocessing_result.get('traverses', {})
-        traverses = traverses_data.get('traverses', []) if isinstance(traverses_data, dict) else []
-        if traverses:
-            for i, traverse in enumerate(traverses):
-                # Защита от некорректного типа данных (строка вместо словаря)
-                if isinstance(traverse, str):
-                    logger.warning(f"Некорректный формат хода {i}: ожидается dict, получена строка '{traverse}'")
-                    continue
-                if not isinstance(traverse, dict):
-                    logger.warning(f"Некорректный тип хода {i}: {type(traverse)}")
-                    continue
-                    
-                stations = traverse.get('stations', [])
-                num_angles = traverse.get('num_angles', 0)
-                num_distances = traverse.get('num_distances', 0)
-                total_length = traverse.get('total_length', 0)
-                
-                traverse_item = QTreeWidgetItem([
-                    f"Ход {i+1}: {len(stations)} ст., "
-                    f"{num_angles} углов, {num_distances} линий, "
-                    f"L={total_length:.1f}м"
-                ])
-                
-                # Добавляем станции
-                for station in stations:
-                    station_item = QTreeWidgetItem([f"Станция: {station}"])
-                    traverse_item.addChild(station_item)
-                
-                ts_item.addChild(traverse_item)
-        else:
-            ts_item.addChild(QTreeWidgetItem(["Нет тахеометрических ходов"]))
-        
-        tree.addTopLevelItem(ts_item)
-        ts_item.setExpanded(True)
-        
-        # Корневой элемент "Нивелирные секции"
-        level_item = QTreeWidgetItem(["Нивелирные секции"])
-        level_icon = QIcon.fromTheme("applications-science")
-        if not level_icon.isNull():
-            level_item.setIcon(0, level_icon)
-        
-        # sections находится внутри traverses_data
-        sections = traverses_data.get('sections', []) if isinstance(traverses_data, dict) else []
-        if sections:
-            for i, section in enumerate(sections):
-                # Защита от некорректного типа данных (строка вместо словаря)
-                if isinstance(section, str):
-                    logger.warning(f"Некорректный формат секции {i}: ожидается dict, получена строка '{section}'")
-                    continue
-                if not isinstance(section, dict):
-                    logger.warning(f"Некорректный тип секции {i}: {type(section)}")
-                    continue
-                    
-                stations = section.get('stations', [])
-                num_height_diffs = section.get('num_height_diffs', 0)
-                total_elev_diff = section.get('total_elevation_diff', 0)
-                
-                section_item = QTreeWidgetItem([
-                    f"Секция {i+1}: {len(stations)} ст., "
-                    f"{num_height_diffs} превышений, "
-                    f"Σh={total_elev_diff:.3f}м"
-                ])
-                
-                # Добавляем станции
-                for station in stations:
-                    station_item = QTreeWidgetItem([f"Станция: {station}"])
-                    section_item.addChild(station_item)
-                
-                level_item.addChild(section_item)
-        else:
-            level_item.addChild(QTreeWidgetItem(["Нет нивелирных секций"]))
-        
-        tree.addTopLevelItem(level_item)
-        level_item.setExpanded(True)
-        
-        # Корневой элемент "GNSS базовые линии"
-        gnss_item = QTreeWidgetItem(["GNSS базовые линии"])
-        gnss_icon = QIcon.fromTheme("applications-science")
-        if not gnss_icon.isNull():
-            gnss_item.setIcon(0, gnss_icon)
-        
-        # gnss_baselines находится внутри traverses_data
-        baselines = traverses_data.get('gnss_baselines', []) if isinstance(traverses_data, dict) else []
-        if baselines:
-            for i, bl in enumerate(baselines):
-                # Защита от некорректного типа данных (строка вместо словаря)
-                if isinstance(bl, str):
-                    logger.warning(f"Некорректный формат базовой линии {i}: ожидается dict, получена строка '{bl}'")
-                    continue
-                if not isinstance(bl, dict):
-                    logger.warning(f"Некорректный тип базовой линии {i}: {type(bl)}")
-                    continue
-                    
-                from_st = bl.get('from_station', '?')
-                to_st = bl.get('to_station', '?')
-                dx = bl.get('dx', 0)
-                dy = bl.get('dy', 0)
-                dz = bl.get('dz', 0)
-                
-                bl_item = QTreeWidgetItem([
-                    f"{from_st} → {to_st}: "
-                    f"dX={dx:.3f}, dY={dy:.3f}, dZ={dz:.3f}"
-                ])
-                gnss_item.addChild(bl_item)
-        else:
-            gnss_item.addChild(QTreeWidgetItem(["Нет GNSS базовых линий"]))
-        
-        tree.addTopLevelItem(gnss_item)
-        gnss_item.setExpanded(True)
+                # Конвертируем словари обратно в объекты CombinedObservation
+                converted_observations = self._convert_observations_to_objects(observations)
+                self.observations_table.update_data(converted_observations)
     
     def _check_tolerances(self):
         """Контроль допусков"""
@@ -1833,19 +1945,22 @@ class MainWindow(QMainWindow):
         if not self.current_project:
             QMessageBox.warning(self, "Предупреждение", "Нет открытого проекта")
             return
-        
+
+        # Проверка наличия результатов уравнивания
+        if not hasattr(self.current_project, 'adjustment_result') or not self.current_project.adjustment_result:
+            QMessageBox.warning(
+                self,
+                "Предупреждение",
+                "Не найдены результаты уравнивания.\n\n"
+                "Сначала выполните уравнивание сети:\n"
+                "• Классическое МНК уравнивание\n"
+                "• Робастное уравнивание"
+            )
+            return
+
         try:
             from geoadjust.core.reliability.baarda_method import BaardaMethod
-            
-            # Проверка наличия результатов уравнивания
-            if not hasattr(self.current_project, 'adjustment_result'):
-                QMessageBox.warning(
-                    self,
-                    "Предупреждение",
-                    "Сначала выполните уравнивание сети"
-                )
-                return
-            
+
             baarda = BaardaMethod()
             result = baarda.analyze(self.current_project.adjustment_result)
             
@@ -2009,47 +2124,213 @@ class MainWindow(QMainWindow):
         if not self.current_project:
             QMessageBox.warning(self, "Предупреждение", "Нет открытого проекта")
             return
-        
-        try:
-            from geoadjust.io.export.dynadjust_report import ReportGenerator
-            
-            generator = ReportGenerator()
-            points = self.current_project.get_points()
-            
-            if not points:
-                QMessageBox.information(self, "Информация", "В проекте нет пунктов")
+
+        # Проверка наличия результатов уравнивания
+        if not hasattr(self.current_project, 'adjustment_result') or not self.current_project.adjustment_result:
+            reply = QMessageBox.question(
+                self,
+                "Рекомендация",
+                "Результаты уравнивания не найдены.\n\n"
+                "Ведомость координат будет содержать только исходные данные.\n"
+                "Для получения уравненных координат выполните:\n"
+                "• Классическое МНК уравнивание\n"
+                "• Робастное уравнивание\n\n"
+                "Продолжить?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            if reply == QMessageBox.No:
                 return
-            
+
+        try:
+            from geoadjust.core.reporting.reports import ReportGenerator
+
+            generator = ReportGenerator()
+            adjustment_result = getattr(self.current_project, 'adjustment_result', None)
+
             # Выбор файла для сохранения
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "Сохранить ведомость координат",
-                "",
-                "PDF файлы (*.pdf);;Excel файлы (*.xlsx);;Все файлы (*)"
+                f"{self.current_project.name}_coordinates_report.html",
+                "HTML файлы (*.html);;Все файлы (*)"
             )
-            
+
             if file_path:
-                generator.generate_coordinate_schedule(points, file_path)
+                # Генерируем HTML отчет
+                html_content = generator.generate_coordinates_report(self.current_project, adjustment_result)
+
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(html_content)
+
                 QMessageBox.information(
                     self,
                     "Успех",
-                    f"Ведомость координат сохранена:\n{file_path}"
+                    f"Ведомость координат сохранена:\n{file_path}\n\n"
+                    "Отчет открывается в веб-браузере."
                 )
                 logger.info(f"Ведомость координат сохранена: {file_path}")
-            
+
+                # Предлагаем открыть файл
+                import subprocess
+                import platform
+                try:
+                    if platform.system() == 'Windows':
+                        subprocess.run(['start', file_path], shell=True)
+                    elif platform.system() == 'Darwin':  # macOS
+                        subprocess.run(['open', file_path])
+                    else:  # Linux
+                        subprocess.run(['xdg-open', file_path])
+                except Exception as e:
+                    logger.warning(f"Не удалось автоматически открыть файл: {e}")
+
         except Exception as e:
-            logger.error(f"Ошибка формирования ведомости: {e}", exc_info=True)
-            QMessageBox.critical(self, "Ошибка", f"Ошибка формирования ведомости:\n{str(e)}")
+            logger.error(f"Ошибка формирования ведомости координат: {e}", exc_info=True)
+            QMessageBox.critical(self, "Ошибка", f"Ошибка формирования ведомости координат:\n{str(e)}")
     
+    def _topology_schedule(self):
+        """Формирование ведомости топологии сети"""
+        if not self.current_project:
+            QMessageBox.warning(self, "Предупреждение", "Нет открытого проекта")
+            return
+
+        # Проверка наличия данных в проекте
+        observations = self.current_project.get_observations()
+        if not observations:
+            QMessageBox.warning(
+                self,
+                "Предупреждение",
+                "В проекте нет измерений.\n\n"
+                "Для формирования ведомости топологии сети необходимо:\n"
+                "• Импортировать данные из SDR файла\n"
+                "• Добавить измерения вручную"
+            )
+            return
+
+        try:
+            from geoadjust.core.reporting.reports import ReportGenerator
+
+            generator = ReportGenerator()
+            adjustment_result = getattr(self.current_project, 'adjustment_result', None)
+
+            # Выбор файла для сохранения
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Сохранить ведомость топологии сети",
+                f"{self.current_project.name}_topology_report.html",
+                "HTML файлы (*.html);;Все файлы (*)"
+            )
+
+            if file_path:
+                # Генерируем HTML отчет
+                html_content = generator.generate_topology_report(self.current_project, adjustment_result)
+
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(html_content)
+
+                QMessageBox.information(
+                    self,
+                    "Успех",
+                    f"Ведомость топологии сети сохранена:\n{file_path}\n\n"
+                    "Отчет открывается в веб-браузере."
+                )
+                logger.info(f"Ведомость топологии сети сохранена: {file_path}")
+
+                # Предлагаем открыть файл
+                import subprocess
+                import platform
+                try:
+                    if platform.system() == 'Windows':
+                        subprocess.run(['start', file_path], shell=True)
+                    elif platform.system() == 'Darwin':  # macOS
+                        subprocess.run(['open', file_path])
+                    else:  # Linux
+                        subprocess.run(['xdg-open', file_path])
+                except Exception as e:
+                    logger.warning(f"Не удалось автоматически открыть файл: {e}")
+
+        except Exception as e:
+            logger.error(f"Ошибка формирования ведомости топологии: {e}", exc_info=True)
+            QMessageBox.critical(self, "Ошибка", f"Ошибка формирования ведомости топологии:\n{str(e)}")
+
+    def _accuracy_schedule(self):
+        """Формирование ведомости оценки точности"""
+        if not self.current_project:
+            QMessageBox.warning(self, "Предупреждение", "Нет открытого проекта")
+            return
+
+        # Проверка наличия результатов уравнивания
+        if not hasattr(self.current_project, 'adjustment_result') or not self.current_project.adjustment_result:
+            reply = QMessageBox.question(
+                self,
+                "Рекомендация",
+                "Результаты уравнивания не найдены.\n\n"
+                "Ведомость оценки точности будет содержать только априорные оценки.\n"
+                "Для получения точных оценок выполните:\n"
+                "• Классическое МНК уравнивание\n"
+                "• Робастное уравнивание\n\n"
+                "Продолжить?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            if reply == QMessageBox.No:
+                return
+
+        try:
+            from geoadjust.core.reporting.reports import ReportGenerator
+
+            generator = ReportGenerator()
+            adjustment_result = getattr(self.current_project, 'adjustment_result', None)
+
+            # Выбор файла для сохранения
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Сохранить ведомость оценки точности",
+                f"{self.current_project.name}_accuracy_report.html",
+                "HTML файлы (*.html);;Все файлы (*)"
+            )
+
+            if file_path:
+                # Генерируем HTML отчет
+                html_content = generator.generate_accuracy_report(self.current_project, adjustment_result)
+
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(html_content)
+
+                QMessageBox.information(
+                    self,
+                    "Успех",
+                    f"Ведомость оценки точности сохранена:\n{file_path}\n\n"
+                    "Отчет открывается в веб-браузере."
+                )
+                logger.info(f"Ведомость оценки точности сохранена: {file_path}")
+
+                # Предлагаем открыть файл
+                import subprocess
+                import platform
+                try:
+                    if platform.system() == 'Windows':
+                        subprocess.run(['start', file_path], shell=True)
+                    elif platform.system() == 'Darwin':  # macOS
+                        subprocess.run(['open', file_path])
+                    else:  # Linux
+                        subprocess.run(['xdg-open', file_path])
+                except Exception as e:
+                    logger.warning(f"Не удалось автоматически открыть файл: {e}")
+
+        except Exception as e:
+            logger.error(f"Ошибка формирования ведомости точности: {e}", exc_info=True)
+            QMessageBox.critical(self, "Ошибка", f"Ошибка формирования ведомости точности:\n{str(e)}")
+
     def _correction_schedule(self):
         """Формирование ведомости поправок"""
         if not self.current_project:
             QMessageBox.warning(self, "Предупреждение", "Нет открытого проекта")
             return
-        
+
         try:
             from geoadjust.io.export.dynadjust_report import ReportGenerator
-            
+
             if not hasattr(self.current_project, 'adjustment_result'):
                 QMessageBox.warning(
                     self,
@@ -2057,9 +2338,9 @@ class MainWindow(QMainWindow):
                     "Сначала выполните уравнивание сети"
                 )
                 return
-            
+
             generator = ReportGenerator()
-            
+
             # Выбор файла для сохранения
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
@@ -2067,7 +2348,7 @@ class MainWindow(QMainWindow):
                 "",
                 "PDF файлы (*.pdf);;Excel файлы (*.xlsx);;Все файлы (*)"
             )
-            
+
             if file_path:
                 generator.generate_correction_schedule(
                     self.current_project.adjustment_result,
@@ -2079,7 +2360,7 @@ class MainWindow(QMainWindow):
                     f"Ведомость поправок сохранена:\n{file_path}"
                 )
                 logger.info(f"Ведомость поправок сохранена: {file_path}")
-            
+
         except Exception as e:
             logger.error(f"Ошибка формирования ведомости: {e}", exc_info=True)
             QMessageBox.critical(self, "Ошибка", f"Ошибка формирования ведомости:\n{str(e)}")
@@ -2216,25 +2497,15 @@ class MainWindow(QMainWindow):
             self.properties_dock.setVisible(checked)
     
     # Обработчики изменения видимости док-виджетов
-    def _on_stations_dock_visibility_changed(self, visible: bool):
-        """Обработка изменения видимости панели станций"""
-        if hasattr(self, 'stations_dock_action'):
-            self.stations_dock_action.setChecked(visible)
+    def _on_left_panel_dock_visibility_changed(self, visible: bool):
+        """Обработка изменения видимости левой панели"""
+        if hasattr(self, 'left_panel_dock_action'):
+            self.left_panel_dock_action.setChecked(visible)
 
-    def _on_points_dock_visibility_changed(self, visible: bool):
-        """Обработка изменения видимости панели пунктов"""
-        if hasattr(self, 'points_dock_action'):
-            self.points_dock_action.setChecked(visible)
-    
     def _on_observations_dock_visibility_changed(self, visible: bool):
         """Обработка изменения видимости панели измерений"""
         if hasattr(self, 'observations_dock_action'):
             self.observations_dock_action.setChecked(visible)
-    
-    def _on_traverses_dock_visibility_changed(self, visible: bool):
-        """Обработка изменения видимости панели ходов"""
-        if hasattr(self, 'traverses_dock_action'):
-            self.traverses_dock_action.setChecked(visible)
     
     def _on_log_dock_visibility_changed(self, visible: bool):
         """Обработка изменения видимости панели журнала"""
@@ -2245,6 +2516,72 @@ class MainWindow(QMainWindow):
         """Обработка изменения видимости панели свойств"""
         if hasattr(self, 'properties_dock_action'):
             self.properties_dock_action.setChecked(visible)
+
+    def _on_station_selected_from_panel(self, station_id: str):
+        """Обработка выбора станции из левой панели"""
+        # Фильтруем измерения по станции
+        if hasattr(self, 'observations_table'):
+            self.observations_table.filter_by_station_session(station_id or None)
+
+    def _on_course_selected_from_panel(self, course_id: str):
+        """Обработка выбора хода из левой панели"""
+        # Если выбрано "Все ходы" или сброс, показываем все измерения
+        if course_id == "ALL_COURSES" or course_id is None:
+            if hasattr(self, 'observations_table'):
+                self._refresh_data_views()
+            self.statusBar().showMessage("Показаны все измерения", 3000)
+            return
+
+        # Найдем измерения для выбранного хода
+        course_measurements = []
+        if hasattr(self, 'leveling_courses') and self.leveling_courses:
+            for course in self.leveling_courses:
+                if course.get('course_id') == course_id:
+                    course_measurements = course.get('measurements', [])
+                    break
+
+        # Фильтруем наблюдения по измерениям хода
+        if course_measurements and self.current_project:
+            # Получаем все наблюдения
+            all_observations = self.current_project.get_observations()
+
+            # Создаем маппинг измерений хода для быстрого поиска
+            course_obs_ids = set()
+            for meas in course_measurements:
+                # Создаем идентификатор на основе from_point и to_point
+                if isinstance(meas, dict):
+                    obs_key = f"{meas.get('from_point', '')}_{meas.get('to_point', '')}"
+                else:
+                    obs_key = f"{getattr(meas, 'from_point', '')}_{getattr(meas, 'to_point', '')}"
+                course_obs_ids.add(obs_key)
+
+            # Фильтруем наблюдения
+            filtered_observations = []
+            for obs in all_observations:
+                if isinstance(obs, dict):
+                    obs_key = f"{obs.get('from_point', '')}_{obs.get('to_point', '')}"
+                    obs_type = obs.get('obs_type', '')
+                else:
+                    obs_key = f"{getattr(obs, 'from_point', '')}_{getattr(obs, 'to_point', '')}"
+                    obs_type = getattr(obs, 'obs_type', '')
+
+                if obs_key in course_obs_ids and obs_type == 'leveling_height_diff':
+                    filtered_observations.append(obs)
+
+            # Обновляем таблицу измерений только с измерениями выбранного хода
+            if hasattr(self, 'observations_table'):
+                converted_filtered = self._convert_observations_to_objects(filtered_observations)
+                self.observations_table.set_observations(converted_filtered)
+
+                # Автоматически переключаемся на вкладку нивелирования
+                if hasattr(self.observations_table, 'tabs'):
+                    for i in range(self.observations_table.tabs.count()):
+                        tab_text = self.observations_table.tabs.tabText(i)
+                        if "нивелир" in tab_text.lower():
+                            self.observations_table.tabs.setCurrentIndex(i)
+                            break
+
+        self.statusBar().showMessage(f"Показаны измерения хода {course_id}", 3000)
     
     def _restore_all_panels(self):
         """Восстановить все панели"""

@@ -104,18 +104,29 @@ class EquationsBuilder:
         
         obs_index = 0
         skipped_count = 0
-        
+
+        self.logger.info(f"Processing {len(observations)} observations")
         for obs in observations:
+            self.logger.debug(f"Processing observation {obs.obs_id}: type={obs.obs_type}, active={obs.is_active}, from={obs.from_point_id}, to={obs.to_point_id}")
             if not obs.is_active:
+                self.logger.debug(f"Skipping inactive observation {obs.obs_id}")
                 skipped_count += 1
                 continue
             
             try:
+                # Check if points exist
+                if obs.from_point_id not in points:
+                    self.logger.error(f"Point {obs.from_point_id} not found in points dict for observation {obs.obs_id}")
+                    continue
+                if obs.to_point_id not in points:
+                    self.logger.error(f"Point {obs.to_point_id} not found in points dict for observation {obs.obs_id}")
+                    continue
+
                 if obs.obs_type == 'direction':
                     indices, coeffs, ell = self._build_direction_equation(
                         obs, points, unknown_indices, num_unknowns_per_point
                     )
-                elif obs.obs_type == 'distance':
+                elif obs.obs_type in ['distance', 'slope_distance', 'horizontal_distance']:
                     indices, coeffs, ell = self._build_distance_equation(
                         obs, points, unknown_indices, num_unknowns_per_point
                     )
@@ -128,7 +139,7 @@ class EquationsBuilder:
                     indices_list, coeffs_list, ell_list = self._build_gnss_vector_equations(
                         obs, points, unknown_indices, num_unknowns_per_point
                     )
-                    
+
                     # Обработка трёх уравнений
                     for sub_indices, sub_coeffs, sub_ell in zip(indices_list, coeffs_list, ell_list):
                         if sub_indices:  # Если есть ненулевые коэффициенты
@@ -138,6 +149,79 @@ class EquationsBuilder:
                                 data_values.append(coeff)
                             L_vector.append(sub_ell)
                             obs_index += 1
+                elif obs.obs_type == 'combined':
+                    # Для combined измерений создаем несколько уравнений
+                    equations_created = False
+
+
+
+                    # Направление (горизонтальный угол)
+                    if hasattr(obs, 'horizontal_angle') and obs.horizontal_angle is not None:
+                        temp_obs = type('TempObs', (), {
+                            'obs_id': f"{obs.obs_id}_dir",
+                            'from_point_id': obs.from_point_id,
+                            'to_point_id': obs.to_point_id,
+                            'value': obs.horizontal_angle,
+                            'is_active': getattr(obs, 'is_active', True)
+                        })()
+                        indices, coeffs, ell = self._build_direction_equation(
+                            temp_obs, points, unknown_indices, num_unknowns_per_point
+                        )
+                        if indices:  # Если уравнение создано
+                            for col_idx, coeff in zip(indices, coeffs):
+                                row_indices.append(obs_index)
+                                col_indices.append(col_idx)
+                                data_values.append(coeff)
+                            L_vector.append(ell)
+                            obs_index += 1
+                            equations_created = True
+
+                    # Расстояние
+                    if hasattr(obs, 'slope_distance') and obs.slope_distance is not None:
+                        temp_obs = type('TempObs', (), {
+                            'obs_id': f"{obs.obs_id}_dist",
+                            'from_point_id': obs.from_point_id,
+                            'to_point_id': obs.to_point_id,
+                            'value': obs.slope_distance,
+                            'is_active': getattr(obs, 'is_active', True)
+                        })()
+                        indices, coeffs, ell = self._build_distance_equation(
+                            temp_obs, points, unknown_indices, num_unknowns_per_point
+                        )
+                        if indices:  # Если уравнение создано
+                            for col_idx, coeff in zip(indices, coeffs):
+                                row_indices.append(obs_index)
+                                col_indices.append(col_idx)
+                                data_values.append(coeff)
+                            L_vector.append(ell)
+                            obs_index += 1
+                            equations_created = True
+
+                    # Зенитный угол
+                    if hasattr(obs, 'zenith_angle') and obs.zenith_angle is not None and num_unknowns_per_point >= 3:
+                        # Для зенитного угла нужна высота
+                        temp_obs = type('TempObs', (), {
+                            'obs_id': f"{obs.obs_id}_zen",
+                            'from_point_id': obs.from_point_id,
+                            'to_point_id': obs.to_point_id,
+                            'value': obs.zenith_angle,
+                            'is_active': getattr(obs, 'is_active', True)
+                        })()
+                        indices, coeffs, ell = self._build_zenith_angle_equation(
+                            temp_obs, points, unknown_indices, num_unknowns_per_point
+                        )
+                        if indices:  # Если уравнение создано
+                            for col_idx, coeff in zip(indices, coeffs):
+                                row_indices.append(obs_index)
+                                col_indices.append(col_idx)
+                                data_values.append(coeff)
+                            L_vector.append(ell)
+                            obs_index += 1
+                            equations_created = True
+
+                    if not equations_created:
+                        self.logger.warning(f"Combined измерение {obs.obs_id} не создало ни одного уравнения")
+                        continue
                     continue
                 elif obs.obs_type == 'azimuth':
                     # Азимут обрабатывается как направление
@@ -155,17 +239,20 @@ class EquationsBuilder:
                         obs, points, unknown_indices, num_unknowns_per_point
                     )
                 else:
-                    self.logger.warning(f"Неизвестный тип измерения: {obs.obs_type}")
+                    self.logger.warning(f"Неизвестный тип измерения: {obs.obs_type} for observation {obs.obs_id}")
                     continue
                 
                 # Заполнение матрицы для одного уравнения
                 if indices:  # Если есть ненулевые коэффициенты
+                    self.logger.debug(f"Adding equation for {obs.obs_id} with {len(indices)} coefficients")
                     for col_idx, coeff in zip(indices, coeffs):
                         row_indices.append(obs_index)
                         col_indices.append(col_idx)
                         data_values.append(coeff)
                     L_vector.append(ell)
                     obs_index += 1
+                else:
+                    self.logger.warning(f"No coefficients generated for observation {obs.obs_id} (type: {obs.obs_type})")
                     
             except Exception as e:
                 self.logger.error(f"Ошибка при построении уравнения для {obs.obs_id}: {e}", exc_info=True)
@@ -197,30 +284,35 @@ class EquationsBuilder:
     ) -> Tuple[List[int], List[float], float]:
         """
         Формирование уравнения поправок для направления.
-        
+
         Уравнение поправок для направления (формула Маркузе):
-        
+
             v = -(sin α / S) · Δx_i + (cos α / S) · Δy_i +
                 (sin α / S) · Δx_j - (cos α / S) · Δy_j - ℓ
-        
+
         где:
         - α - азимут направления
         - S - расстояние между пунктами
         - ℓ = M_изм - M_выч (разность измеренного и вычисленного направления)
-        
+
         Частные производные:
         - ∂v/∂x_i = -sin α / S
         - ∂v/∂y_i = cos α / S
         - ∂v/∂x_j = sin α / S
         - ∂v/∂y_j = -cos α / S
         """
-        from_point = points[obs.from_point]
-        to_point = points[obs.to_point]
+        from_point = points[obs.from_point_id]
+        to_point = points[obs.to_point_id]
+        
+        # Проверяем, что координаты не None
+        if from_point.x is None or from_point.y is None or to_point.x is None or to_point.y is None:
+            self.logger.warning(f"Пропускаем измерение {obs.obs_id}: отсутствуют координаты точек {obs.from_point_id} или {obs.to_point_id}")
+            return [], [], 0.0
         
         # Приближенные координаты
         x_i, y_i = from_point.x, from_point.y
         x_j, y_j = to_point.x, to_point.y
-        
+
         # Разности координат
         dx = x_j - x_i
         dy = y_j - y_i
@@ -229,7 +321,7 @@ class EquationsBuilder:
         S = np.sqrt(dx**2 + dy**2)
         
         if S < 1e-6:
-            self.logger.warning(f"Нулевое расстояние между {obs.from_point} и {obs.to_point}")
+            self.logger.warning(f"Нулевое расстояние между {obs.from_point_id} и {obs.to_point_id}")
             S = 1e-6
         
         # Азимут направления (в радианах)
@@ -246,14 +338,14 @@ class EquationsBuilder:
         coeffs = []
         
         # Станция (i)
-        if obs.from_point in unknown_indices:
-            idx_base = unknown_indices[obs.from_point]
+        if obs.from_point_id in unknown_indices:
+            idx_base = unknown_indices[obs.from_point_id]
             indices.extend([idx_base, idx_base + 1])
             coeffs.extend([a_xi, a_yi])
         
         # Целевая точка (j)
-        if obs.to_point in unknown_indices:
-            idx_base = unknown_indices[obs.to_point]
+        if obs.to_point_id in unknown_indices:
+            idx_base = unknown_indices[obs.to_point_id]
             indices.extend([idx_base, idx_base + 1])
             coeffs.extend([a_xj, a_yj])
         
@@ -318,8 +410,8 @@ class EquationsBuilder:
         - ∂v/∂x_j = -cos α
         - ∂v/∂y_j = -sin α
         """
-        from_point = points[obs.from_point]
-        to_point = points[obs.to_point]
+        from_point = points[obs.from_point_id]
+        to_point = points[obs.to_point_id]
         
         # Приближенные координаты
         x_i, y_i = from_point.x, from_point.y
@@ -333,31 +425,31 @@ class EquationsBuilder:
         S = np.sqrt(dx**2 + dy**2)
         
         if S < 1e-6:
-            self.logger.warning(f"Нулевое расстояние между {obs.from_point} и {obs.to_point}")
+            self.logger.warning(f"Нулевое расстояние между {obs.from_point_id} и {obs.to_point_id}")
             S = 1e-6
         
         # Азимут направления (в радианах)
         alpha = np.arctan2(dy, dx)
         
-        # Коэффициенты уравнения поправок
-        a_xi = np.cos(alpha)
-        a_yi = np.sin(alpha)
-        a_xj = -np.cos(alpha)
-        a_yj = -np.sin(alpha)
+        # Коэффициенты уравнения поправок (ИСПРАВЛЕНО: добавлено деление на S)
+        a_xi = np.cos(alpha) / S
+        a_yi = np.sin(alpha) / S
+        a_xj = -np.cos(alpha) / S
+        a_yj = -np.sin(alpha) / S
         
         # Индексы неизвестных и коэффициенты
         indices = []
         coeffs = []
         
         # Станция (i)
-        if obs.from_point in unknown_indices:
-            idx_base = unknown_indices[obs.from_point]
+        if obs.from_point_id in unknown_indices:
+            idx_base = unknown_indices[obs.from_point_id]
             indices.extend([idx_base, idx_base + 1])
             coeffs.extend([a_xi, a_yi])
         
         # Целевая точка (j)
-        if obs.to_point in unknown_indices:
-            idx_base = unknown_indices[obs.to_point]
+        if obs.to_point_id in unknown_indices:
+            idx_base = unknown_indices[obs.to_point_id]
             indices.extend([idx_base, idx_base + 1])
             coeffs.extend([a_xj, a_yj])
         
@@ -402,26 +494,36 @@ class EquationsBuilder:
             return [], [], 0.0
         
         # Станция (i)
-        if obs.from_point in unknown_indices:
-            idx_base = unknown_indices[obs.from_point]
+        if obs.from_point_id in unknown_indices:
+            idx_base = unknown_indices[obs.from_point_id]
             idx_h = idx_base + 2  # Индекс высоты (третий параметр)
             indices.append(idx_h)
             coeffs.append(1.0)
         
         # Целевая точка (j)
-        if obs.to_point in unknown_indices:
-            idx_base = unknown_indices[obs.to_point]
+        if obs.to_point_id in unknown_indices:
+            idx_base = unknown_indices[obs.to_point_id]
             idx_h = idx_base + 2
             indices.append(idx_h)
             coeffs.append(-1.0)
         
         # Свободный член ℓ = h_изм - (H_j - H_i)
-        from_point = points[obs.from_point]
-        to_point = points[obs.to_point]
+        from_point = points[obs.from_point_id]
+        to_point = points[obs.to_point_id]
+        
+        # Проверяем, что координаты не None (для высоты нужны хотя бы x,y)
+        if from_point.x is None or from_point.y is None or to_point.x is None or to_point.y is None:
+            self.logger.warning(f"Пропускаем измерение {obs.obs_id}: отсутствуют координаты точек {obs.from_point_id} или {obs.to_point_id}")
+            return [], [], 0.0
         
         # Приближенные высоты
         h_i = from_point.h if from_point.h is not None else 0.0
         h_j = to_point.h if to_point.h is not None else 0.0
+
+        # Проверяем, что хотя бы одна высота не None (для 3D сети)
+        if num_unknowns_per_point == 3 and h_i == 0.0 and h_j == 0.0 and from_point.h is None and to_point.h is None:
+            self.logger.warning(f"Пропускаем измерение {obs.obs_id}: отсутствуют высоты точек {obs.from_point_id} или {obs.to_point_id}")
+            return [], [], 0.0
         
         # Высоты инструмента и цели (если заданы)
         instrument_height = getattr(obs, 'instrument_height', 0.0)
@@ -459,10 +561,21 @@ class EquationsBuilder:
         - ∂v_y/∂y_i = -1, ∂v_y/∂y_j = 1
         - ∂v_z/∂z_i = -1, ∂v_z/∂z_j = 1
         """
+        from_point = points[obs.from_point_id]
+        to_point = points[obs.to_point_id]
+
+        # Проверяем, что координаты не None
+        if (from_point.x is None or from_point.y is None or
+            (num_unknowns_per_point == 3 and from_point.h is None) or
+            to_point.x is None or to_point.y is None or
+            (num_unknowns_per_point == 3 and to_point.h is None)):
+            self.logger.warning(f"Пропускаем GNSS измерение {obs.obs_id}: отсутствуют координаты точек {obs.from_point_id} или {obs.to_point_id}")
+            return [], [], []
+
         indices_list = []
         coeffs_list = []
         ell_list = []
-        
+
         # Получаем приращения координат из вектора ГНСС
         delta_x = getattr(obs, 'delta_x', None) or obs.value
         delta_y = getattr(obs, 'delta_y', None) or 0.0
@@ -474,8 +587,8 @@ class EquationsBuilder:
             coeffs = []
             
             # Станция (i)
-            if obs.from_point in unknown_indices:
-                idx_base = unknown_indices[obs.from_point]
+            if obs.from_point_id in unknown_indices:
+                idx_base = unknown_indices[obs.from_point_id]
                 
                 if num_unknowns_per_point == 3:
                     # 3D сеть: x=0, y=1, z=2
@@ -489,8 +602,8 @@ class EquationsBuilder:
                     coeffs.append(-1.0)
             
             # Целевая точка (j)
-            if obs.to_point in unknown_indices:
-                idx_base = unknown_indices[obs.to_point]
+            if obs.to_point_id in unknown_indices:
+                idx_base = unknown_indices[obs.to_point_id]
                 
                 if num_unknowns_per_point == 3:
                     idx_comp = idx_base + component_idx
@@ -546,8 +659,8 @@ class EquationsBuilder:
         Уравнение поправок для зенитного угла аналогично направлению,
         но с учётом вертикальной плоскости.
         """
-        from_point = points[obs.from_point]
-        to_point = points[obs.to_point]
+        from_point = points[obs.from_point_id]
+        to_point = points[obs.to_point_id]
         
         # Приближенные координаты
         x_i, y_i = from_point.x, from_point.y
@@ -561,7 +674,7 @@ class EquationsBuilder:
         S_h = np.sqrt(dx**2 + dy**2)
         
         if S_h < 1e-6:
-            self.logger.warning(f"Нулевое горизонтальное расстояние между {obs.from_point} и {obs.to_point}")
+            self.logger.warning(f"Нулевое горизонтальное расстояние между {obs.from_point_id} и {obs.to_point_id}")
             S_h = 1e-6
         
         # Вертикальное превышение (если есть высоты)
@@ -613,8 +726,8 @@ class EquationsBuilder:
         coeffs = []
         
         # Станция (i)
-        if obs.from_point in unknown_indices:
-            idx_base = unknown_indices[obs.from_point]
+        if obs.from_point_id in unknown_indices:
+            idx_base = unknown_indices[obs.from_point_id]
             if num_unknowns_per_point >= 2:
                 indices.extend([idx_base, idx_base + 1])
                 coeffs.extend([a_xi, a_yi])
@@ -623,8 +736,8 @@ class EquationsBuilder:
                 coeffs.append(np.sin(zenith) / S)
         
         # Целевая точка (j)
-        if obs.to_point in unknown_indices:
-            idx_base = unknown_indices[obs.to_point]
+        if obs.to_point_id in unknown_indices:
+            idx_base = unknown_indices[obs.to_point_id]
             if num_unknowns_per_point >= 2:
                 indices.extend([idx_base, idx_base + 1])
                 coeffs.extend([a_xj, a_yj])

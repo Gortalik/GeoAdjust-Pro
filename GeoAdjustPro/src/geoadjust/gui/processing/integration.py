@@ -14,6 +14,7 @@ from geoadjust.core.network.models import NetworkPoint, Observation
 from geoadjust.core.adjustment.engine import AdjustmentEngine
 from geoadjust.core.adjustment.equations_builder import EquationsBuilder
 from geoadjust.core.adjustment.weight_builder import WeightBuilder
+from geoadjust.core.preprocessing.module import PreprocessingModule
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,12 @@ class ProcessingIntegration(QObject):
         self.engine = AdjustmentEngine()
         self.builder = EquationsBuilder()
         self.weight_builder = WeightBuilder()
+        # Получаем допуски из проекта если доступны
+        tolerances = {}
+        if hasattr(self, '_project_points') and self._project_points:
+            # Если данные проекта установлены напрямую, пытаемся получить допуски
+            pass  # Допуски будут получены в prepare_data_for_adjustment если нужно
+        self.preprocessing = PreprocessingModule(tolerances=tolerances)
     
     def set_models(self, points_view, observations_view):
         """Установка моделей данных для интеграции
@@ -61,17 +68,78 @@ class ProcessingIntegration(QObject):
     
     def prepare_data_for_adjustment(self) -> tuple:
         """Подготовка данных для уравнивания из моделей
-        
+
         Returns:
             tuple: (points_dict, observations_list, fixed_points)
         """
         # Если данные проекта установлены напрямую, используем их
         if hasattr(self, '_project_points') and self._project_points:
-            points_dict = self._project_points
+            points_list = self._project_points
             observations_list = self._project_observations or []
-            fixed_points = [pid for pid, p in points_dict.items() 
-                          if getattr(p, 'coord_type', 'FREE') == 'FIXED']
-            
+
+            # Преобразуем список точек в словарь объектов Point для совместимости
+            from geoadjust.core.network.models import NetworkPoint
+
+            points_dict = {}
+            for i, p in enumerate(points_list):
+                if isinstance(p, dict):
+                    # Конвертируем словарь в объект Point
+                    point_id = p.get('point_id', str(i))
+                    point = NetworkPoint(
+                        point_id=point_id,
+                        x=p.get('x'),
+                        y=p.get('y'),
+                        h=p.get('h'),
+                        coord_type=p.get('point_type', 'FREE')
+                    )
+                    points_dict[point_id] = point
+                else:
+                    # Уже объект Point
+                    points_dict[p.point_id] = p
+
+            # Конвертируем измерения в объекты Observation
+            from geoadjust.core.network.models import Observation
+
+            converted_observations = []
+            for obs in observations_list:
+                if isinstance(obs, dict):
+                    observation = Observation(
+                        obs_id=f"OBS_{len(converted_observations):06d}",
+                        obs_type=obs.get('obs_type') or obs.get('type', 'unknown'),
+                        from_setup_id=obs.get('from_setup_id', f"{obs.get('from_point', 'UNK')}_SETUP"),
+                        from_point_id=obs.get('from_point') or obs.get('from_point_id', 'UNK'),
+                        to_point_id=obs.get('to_point') or obs.get('to_point_id', 'UNK'),
+                        value=obs.get('value', 0.0),
+                        sigma_apriori=obs.get('sigma_apriori', 0.00005),
+                        face_position=obs.get('face_position'),
+                        raw_line=obs.get('raw_line')
+                    )
+                    observation.is_active = True  # По умолчанию активны
+                    converted_observations.append(observation)
+                else:
+                    # Уже объект Observation
+                    converted_observations.append(obs)
+
+            observations_list = converted_observations
+
+            # Создаем недостающие точки из измерений
+            from geoadjust.core.network.models import NetworkPoint
+            for obs in observations_list:
+                for point_id in [obs.from_point_id, obs.to_point_id]:
+                    if point_id and point_id not in points_dict and point_id != 'UNK':
+                        # Создаем новую точку с FREE типом и None координатами
+                        points_dict[point_id] = NetworkPoint(
+                            point_id=point_id,
+                            x=None,
+                            y=None,
+                            h=None,
+                            coord_type='FREE'
+                        )
+                        logger.info(f"Создана недостающая точка {point_id} из измерений")
+
+            # Определяем фиксированные точки
+            fixed_points = [pid for pid, p in points_dict.items() if p.coord_type == 'FIXED']
+
             logger.info(f"Подготовлено для уравнивания (из проекта): "
                        f"{len(points_dict)} пунктов, "
                        f"{len(observations_list)} измерений, "
@@ -100,11 +168,26 @@ class ProcessingIntegration(QObject):
             obs = self.observations_model.get_observation(row)
             if obs and obs.is_active:
                 observations_list.append(obs)
-        
+
+        # Создаем недостающие точки из измерений
+        from geoadjust.core.network.models import NetworkPoint
+        for obs in observations_list:
+            for point_id in [obs.from_point_id, obs.to_point_id]:
+                if point_id and point_id not in points_dict:
+                    # Создаем новую точку с FREE типом и None координатами
+                    points_dict[point_id] = NetworkPoint(
+                        point_id=point_id,
+                        x=None,
+                        y=None,
+                        h=None,
+                        coord_type='FREE'
+                    )
+                    logger.info(f"Создана недостающая точка {point_id} из измерений")
+
         logger.info(f"Подготовлено для уравнивания: "
-                   f"{len(points_dict)} пунктов, "
-                   f"{len(observations_list)} измерений, "
-                   f"{len(fixed_points)} исходных пунктов")
+                    f"{len(points_dict)} пунктов, "
+                    f"{len(observations_list)} измерений, "
+                    f"{len(fixed_points)} исходных пунктов")
         
         return points_dict, observations_list, fixed_points
     
@@ -120,7 +203,31 @@ class ProcessingIntegration(QObject):
             
             # Подготовка данных
             points_dict, observations_list, fixed_points = self.prepare_data_for_adjustment()
-            
+
+            self.progress_updated.emit(20, "Предобработка данных...")
+
+            # Предобработка данных
+            preprocessing_config = {}
+            preprocessing_result = self.preprocessing.run_preprocessing(
+                observations_list, points_dict, preprocessing_config
+            )
+
+            # Используем обработанные данные
+            if preprocessing_result.get('corrected_observations'):
+                observations_list = preprocessing_result['corrected_observations']
+                logger.info(f"Предобработка применила коррекции к {len(observations_list)} измерениям")
+
+            if preprocessing_result.get('preliminary_coordinates'):
+                # Обновляем координаты пунктов предварительными
+                prelim_coords_dict = preprocessing_result['preliminary_coordinates'].get('coordinates', {})
+                for point_id, coords in prelim_coords_dict.items():
+                    if point_id in points_dict:
+                        points_dict[point_id].x = coords.get('x', points_dict[point_id].x)
+                        points_dict[point_id].y = coords.get('y', points_dict[point_id].y)
+                        if 'h' in coords and points_dict[point_id].h is not None:
+                            points_dict[point_id].h = coords['h']
+                logger.info(f"Предобработка рассчитала предварительные координаты для {len(prelim_coords_dict)} пунктов")
+
             self.progress_updated.emit(30, "Построение матрицы коэффициентов...")
             
             # Построение матрицы коэффициентов

@@ -43,11 +43,12 @@ class PreprocessingModule:
     # Типы измерений по категориям
     LEVELING_TYPES = {'height_diff', 'backsight', 'foresight', 'intermediate'}
     TOTAL_STATION_TYPES = {'direction', 'zenith_angle', 'vertical_angle', 'distance',
-                          'slope_distance', 'horizontal_distance', 'azimuth'}
+                           'slope_distance', 'horizontal_distance', 'azimuth'}
     GNSS_TYPES = {'gnss_vector'}
 
-    def __init__(self):
+    def __init__(self, tolerances=None):
         self.current_stage = 0
+        self.tolerances = tolerances or {}
         self.acceptance_criteria = {}
         self.logger = logger
 
@@ -57,11 +58,11 @@ class PreprocessingModule:
 
     def _get_from_point(self, obs) -> str:
         """Получение начальной точки"""
-        return getattr(obs, 'from_point', '')
+        return getattr(obs, 'from_point_id', getattr(obs, 'from_point', ''))
 
     def _get_to_point(self, obs) -> str:
         """Получение конечной точки"""
-        return getattr(obs, 'to_point', '')
+        return getattr(obs, 'to_point_id', getattr(obs, 'to_point', ''))
 
     def _get_value(self, obs) -> float:
         """Получение значения измерения"""

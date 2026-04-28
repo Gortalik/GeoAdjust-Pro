@@ -58,16 +58,31 @@ class PointsTableView(QTableView):
             row_data = [
                 point.get('id', ''),
                 point.get('name', ''),
-                point.get('type', 'FREE'),
-                str(point.get('x', '')),
-                str(point.get('y', '')),
-                str(point.get('h', '')),
+                point.get('coord_type', 'FREE'),
+                point.get('x', 0),
+                point.get('y', 0),
+                point.get('h', 0),
                 point.get('instrument', ''),
                 point.get('notes', '')
             ]
             items = [QStandardItem(str(val)) for val in row_data]
             self.model.appendRow(items)
-    
+
+    def _show_header_context_menu(self, position):
+        """Контекстное меню для заголовка таблицы"""
+        menu = QMenu(self)
+
+        reset_sort_action = QAction("Сбросить сортировку", self)
+        reset_sort_action.triggered.connect(self._reset_sorting)
+
+        menu.addAction(reset_sort_action)
+        menu.exec_(self.horizontalHeader().mapToGlobal(position))
+
+    def _reset_sorting(self):
+        """Сброс сортировки таблицы"""
+        self.sortByColumn(-1)
+        self.horizontalHeader().setSortIndicator(-1, Qt.AscendingOrder)
+
     def _show_context_menu(self, position):
         """Показ контекстного меню"""
         menu = QMenu(self)

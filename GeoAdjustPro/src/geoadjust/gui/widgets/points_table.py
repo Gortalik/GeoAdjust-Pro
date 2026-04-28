@@ -5,12 +5,15 @@
 Реализует отображение и редактирование списка пунктов сети
 """
 
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableView, 
-                             QAbstractItemView, QMenu, QAction, QPushButton, 
-                             QDialog, QFormLayout, QLineEdit, QComboBox, 
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableView,
+                             QAbstractItemView, QMenu, QAction, QPushButton,
+                             QDialog, QFormLayout, QLineEdit, QComboBox,
                              QDialogButtonBox, QMessageBox, QLabel)
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon
+
+# Импорт визуальных делегатов
+from geoadjust.gui.delegates.visual_delegates import PointTypeDelegate
 
 
 class ManualPointInputDialog(QDialog):
@@ -219,10 +222,13 @@ class PointsTableView(QTableView):
         """Настройка модели данных"""
         self.model = QStandardItemModel(0, 8, self)
         self.model.setHorizontalHeaderLabels([
-            "ID", "Наименование", "Тип", "X (м)", "Y (м)", 
+            "ID", "Наименование", "Тип", "X (м)", "Y (м)",
             "H (м)", "Прибор", "Примечание"
         ])
         self.setModel(self.model)
+
+        # Настройка делегатов для визуальных индикаторов
+        self.setItemDelegateForColumn(2, PointTypeDelegate(self))  # Колонка "Тип"
     
     def _show_context_menu(self, position):
         """Показ контекстного меню"""
