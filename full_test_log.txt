@@ -1,0 +1,34 @@
+OpenBLAS WARNING - could not determine the L2 cache size on this system, assuming 256k
+OpenBLAS WARNING - could not determine the L2 cache size on this system, assuming 256k
+Traceback (most recent call last):
+  File "<string>", line 61, in <module>
+ModuleNotFoundError: No module named 'models.network'; 'models' is not a package
+=== ПРОВЕРКА КОМПОНЕНТОВ СИСТЕМЫ ===
+❌ Ошибка GUI: No module named 'gui'
+❌ Ошибка парсеров: No module named 'parsers'
+❌ Ошибка движка: No module named 'engine.adjustment_engine'; 'engine' is not a package
+❌ Ошибка отчетов: No module named 'reports.gost_reporter'; 'reports' is not a package
+
+=== ПОИСК ФАЙЛОВ ИЗМЕРЕНИЙ ===
+Найдено файлов GSI: 7
+Найдено файлов SDR: 7
+
+Файлы GSI:
+  - GRO2209.GSI (30645 байт)
+  - MIR0212.GSI (10920 байт)
+  - DOM0112 (1).GSI (4213 байт)
+  - KOL0708.GSI (11886 байт)
+  - DAY1302.GSI (9070 байт)
+  - GRO0509.GSI (13846 байт)
+  - GRO0109.GSI (11219 байт)
+
+Файлы SDR:
+  - test_survey.sdr (298 байт)
+  - kotlntss06042026.sdr (20335 байт)
+  - badgro16093_const.sdr (121045 байт)
+  - ntsskotl06022026_const.sdr (89090 байт)
+  - grocenter (1)_const.sdr (47881 байт)
+  - gro2908_const.sdr (73165 байт)
+  - badokr_const.sdr (49679 байт)
+
+=== ТЕСТОВЫЙ ЗАПУСК ОБРАБОТКИ ===

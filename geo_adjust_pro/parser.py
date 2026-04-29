@@ -99,8 +99,8 @@ class GSIParser:
             p.x = data.get('x')
             p.y = data.get('y')
             p.h = data.get('h')
-            p.plan_status = 'working' if p.x is None else 'initial'
-            p.height_status = 'working' if p.h is None else 'initial'
+            p.plan_status = "working"  # GSI: все точки рабочие для плана
+            p.height_status = "working"  # GSI: все точки рабочие для высоты
             network.add_point(p)
         
         network.observations = observations
@@ -144,20 +144,33 @@ class SDRParser:
             # Определяем тип записи по первым символам
             rec_code = line[:4] if len(line) >= 4 else line[:2]
             
-            # 02NM - координаты станции: 02NM[имя][X][Y][H]
+            # 02NM - координаты станции: 02NM[имя(12)][X(16)][Y(16)][H(16)]
             if rec_code == '02NM':
                 rest = line[4:].strip()
                 parts = rest.split()
-                if len(parts) >= 4:
+                if len(parts) >= 2:
                     name = parts[0]
-                    try:
-                        x = float(parts[1])
-                        y = float(parts[2])
-                        h = float(parts[3]) if len(parts) > 3 else None
-                        points_data[name] = {'x': x, 'y': y, 'h': h}
-                        current_station = name
-                    except ValueError:
-                        pass
+                    nums = parts[1]
+                    # Числа в SDR33 имеют фиксированную ширину 16 символов
+                    if len(nums) >= 48:  # 3 числа по 16 символов
+                        try:
+                            x = float(nums[0:16].strip())
+                            y = float(nums[16:32].strip())
+                            h = float(nums[32:48].strip())
+                            points_data[name] = {'x': x, 'y': y, 'h': h}
+                            current_station = name
+                        except ValueError as e:
+                            pass
+                    elif len(parts) >= 4:
+                        # Альтернативный формат с пробелами
+                        try:
+                            x = float(parts[1])
+                            y = float(parts[2])
+                            h = float(parts[3])
+                            points_data[name] = {'x': x, 'y': y, 'h': h}
+                            current_station = name
+                        except ValueError:
+                            pass
             
             # 05NM - высота инструмента и цели: 05NM[inst_h][target_h]
             elif rec_code == '05NM':
@@ -249,8 +262,8 @@ class SDRParser:
             p.x = data.get('x')
             p.y = data.get('y')
             p.h = data.get('h')
-            p.plan_status = 'initial' if (p.x is not None and p.y is not None) else 'working'
-            p.height_status = 'initial' if p.h is not None else 'working'
+            p.plan_status = "initial" if (p.x is not None and p.y is not None) else "working"
+            p.height_status = "initial" if p.h is not None else "working"
             network.add_point(p)
         
         network.observations = observations
