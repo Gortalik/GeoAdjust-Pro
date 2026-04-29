@@ -109,10 +109,19 @@ class GSIParser:
 
 
 class SDRParser:
-    """Parser for Sokkia SDR format files"""
+    """Parser for Sokkia SDR format files (плановая сеть)
+    
+    Формат SDR33 использует фиксированные поля:
+    - 01NM: Заголовок файла
+    - 02NM: Координаты станции (X, Y, H)
+    - 05NM: Высота инструмента/цели
+    - 07NM: Станция + направление
+    - 09F1/F2: Наблюдения (горизонтальный угол, зенитное расстояние, расстояние)
+    - 13TS: Метка времени
+    """
     
     def parse_file(self, filepath):
-        network = Network()
+        network = NetworkData()
         
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
@@ -122,107 +131,124 @@ class SDRParser:
         points_data = {}
         observations = []
         current_station = None
+        inst_height = 1.5  # По умолчанию
+        target_height = 1.5
         
-        for line in lines:
-            line = line.strip()
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
             if not line:
+                i += 1
                 continue
             
-            # Формат SDR обычно CSV-like или фиксированный
-            # Пример: 1,STATION,NAME,X,Y,H
-            # Или: 2,BS,TARGET,ANGLE,DIST
+            # Определяем тип записи по первым символам
+            rec_code = line[:4] if len(line) >= 4 else line[:2]
             
-            parts = line.split(',')
-            if len(parts) < 2:
-                parts = line.split()
-            
-            if len(parts) >= 2:
-                rec_type = parts[0].upper()
-                
-                # Точки с координатами
-                if rec_type in ['1', 'POINT', 'COORD']:
+            # 02NM - координаты станции: 02NM[имя][X][Y][H]
+            if rec_code == '02NM':
+                rest = line[4:].strip()
+                parts = rest.split()
+                if len(parts) >= 4:
+                    name = parts[0]
                     try:
-                        # Попытка распарсить координаты
-                        if len(parts) >= 4:
-                            name = parts[1] if len(parts) > 1 else f"SDR_{len(points_data)}"
-                            x = float(parts[2]) if len(parts) > 2 else None
-                            y = float(parts[3]) if len(parts) > 3 else None
-                            h = float(parts[4]) if len(parts) > 4 else None
-                            
-                            points_data[name] = {'x': x, 'y': y, 'h': h}
-                    except:
+                        x = float(parts[1])
+                        y = float(parts[2])
+                        h = float(parts[3]) if len(parts) > 3 else None
+                        points_data[name] = {'x': x, 'y': y, 'h': h}
+                        current_station = name
+                    except ValueError:
                         pass
-                
-                # Станция
-                elif rec_type in ['STATION', 'SETUP']:
-                    if len(parts) > 1:
-                        current_station = parts[1]
-                        if current_station not in points_data:
-                            points_data[current_station] = {'x': None, 'y': None, 'h': None}
-                
-                # Направления/Углы
-                elif rec_type in ['2', 'ANGLE', 'DIR', 'AZIMUTH']:
-                    if current_station and len(parts) >= 3:
-                        target = parts[2] if len(parts) > 2 else f"SDR_T{len(observations)}"
-                        try:
-                            angle = float(parts[3]) if len(parts) > 3 else 0.0
-                            obs = Observation(
-                                from_point=current_station,
-                                to_point=target,
-                                obs_type='direction',
-                                value=angle
-                            )
-                            observations.append(obs)
-                        except:
-                            pass
-                
-                # Расстояния
-                elif rec_type in ['3', 'DIST', 'SD']:
-                    if current_station and len(parts) >= 3:
-                        target = parts[2] if len(parts) > 2 else f"SDR_T{len(observations)}"
-                        try:
-                            dist = float(parts[3]) if len(parts) > 3 else 0.0
-                            obs = Observation(
-                                from_point=current_station,
-                                to_point=target,
-                                obs_type='slope_distance',
-                                value=dist
-                            )
-                            observations.append(obs)
-                        except:
-                            pass
-                
-                # Комбинированные измерения
-                elif rec_type in ['OBS', 'COMBINED']:
-                    if current_station and len(parts) >= 4:
-                        target = parts[2]
-                        try:
-                            angle = float(parts[3]) if len(parts) > 3 else 0.0
-                            dist = float(parts[4]) if len(parts) > 4 else 0.0
+            
+            # 05NM - высота инструмента и цели: 05NM[inst_h][target_h]
+            elif rec_code == '05NM':
+                rest = line[4:].strip()
+                parts = rest.split()
+                if len(parts) >= 2:
+                    try:
+                        inst_height = float(parts[0])
+                        target_height = float(parts[1])
+                    except ValueError:
+                        pass
+            
+            # 07NM - установка на станцию с начальным направлением: 07NM[станция][target][angle]
+            elif rec_code == '07NM':
+                rest = line[4:].strip()
+                parts = rest.split()
+                if len(parts) >= 1:
+                    current_station = parts[0]
+                    if current_station not in points_data:
+                        points_data[current_station] = {'x': None, 'y': None, 'h': None}
+            
+            # 09F1 / 09F2 - наблюдения: 09F[номер][станция(12)][target(12)][Hz(16)][V(16)][Dist(16)]
+            elif rec_code in ['09F1', '09F2']:
+                if current_station:
+                    rest = line[4:].strip()
+                    # Формат SDR33: фиксированная ширина полей
+                    # station(12) target(12) Hz(16) V(16) Dist(16)
+                    if len(rest) >= 24:
+                        station = rest[:12].strip()
+                        target = rest[12:24].strip()
+                        nums = rest[24:].strip()
+                        
+                        # Разделяем числа по 16 символов каждое
+                        hz_angle = None
+                        v_angle = None
+                        dist = None
+                        
+                        if len(nums) >= 16:
+                            try:
+                                hz_angle = float(nums[:16])
+                            except ValueError:
+                                pass
+                        if len(nums) >= 32:
+                            try:
+                                v_angle = float(nums[16:32])
+                            except ValueError:
+                                pass
+                        if len(nums) >= 48:
+                            try:
+                                dist = float(nums[32:48])
+                            except ValueError:
+                                pass
+                        
+                        if hz_angle is not None and target:
+                            # Добавляем точку цели если нет
+                            if target not in points_data:
+                                points_data[target] = {'x': None, 'y': None, 'h': None}
                             
-                            obs_angle = Observation(
+                            # Создаем наблюдение направления
+                            obs_dir = Observation(
+                                id=f"obs_dir_{len(observations)}",
+                                type='direction',
                                 from_point=current_station,
                                 to_point=target,
-                                obs_type='direction',
-                                value=angle
+                                value=hz_angle,
+                                instrument_height=inst_height,
+                                target_height=target_height
                             )
-                            obs_dist = Observation(
-                                from_point=current_station,
-                                to_point=target,
-                                obs_type='slope_distance',
-                                value=dist
-                            )
-                            observations.extend([obs_angle, obs_dist])
-                        except:
-                            pass
+                            observations.append(obs_dir)
+                            
+                            # Создаем наблюдение расстояния если есть
+                            if dist is not None and dist > 0:
+                                obs_dist = Observation(
+                                    id=f"obs_dist_{len(observations)}",
+                                    type='slope_distance',
+                                    from_point=current_station,
+                                    to_point=target,
+                                    value=dist,
+                                    instrument_height=inst_height,
+                                    target_height=target_height
+                                )
+                                observations.append(obs_dist)
+            
+            i += 1
         
-        # Создание точек
+        # Создание точек сети
         for name, data in points_data.items():
-            p = NetworkPoint(name=name)
+            p = NetworkPoint(id=name)
             p.x = data.get('x')
             p.y = data.get('y')
             p.h = data.get('h')
-            # Если есть координаты - initial, иначе working
             p.plan_status = 'initial' if (p.x is not None and p.y is not None) else 'working'
             p.height_status = 'initial' if p.h is not None else 'working'
             network.add_point(p)

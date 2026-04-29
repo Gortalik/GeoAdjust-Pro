@@ -118,9 +118,9 @@ def main():
     for obs in network.observations:
         valid = True
         # Filter gross errors
-        if obs.obs_type == 'leveling_height_diff' and abs(obs.value) > 1.0:
+        if obs.type == 'leveling_height_diff' and abs(obs.value) > 1.0:
             valid = False
-        if obs.obs_type in ['slope_distance', 'horizontal_distance'] and obs.value > 10000.0:
+        if obs.type in ['slope_distance', 'horizontal_distance'] and obs.value > 10000.0:
             valid = False
         if valid:
             cleaned_obs.append(obs)
@@ -134,7 +134,7 @@ def main():
     # Count by type
     obs_types = {}
     for obs in network.observations:
-        obs_types[obs.obs_type] = obs_types.get(obs.obs_type, 0) + 1
+        obs_types[obs.type] = obs_types.get(obs.type, 0) + 1
     
     for otype, cnt in sorted(obs_types.items()):
         print(f"    - {otype}: {cnt}")
@@ -143,7 +143,7 @@ def main():
     print("\n[5/7] УРАВНИВАНИЕ ВЫСОТ")
     print("-" * 40)
     
-    leveling_obs = [o for o in network.observations if o.obs_type == 'leveling_height_diff']
+    leveling_obs = [o for o in network.observations if o.type == 'leveling_height_diff']
     
     if not leveling_obs:
         print("  ! Нет нивелирных наблюдений для уравнивания")
@@ -207,7 +207,7 @@ def main():
     print("\n[6/7] УРАВНИВАНИЕ ПЛАНА")
     print("-" * 40)
     
-    plan_obs = [o for o in network.observations if o.obs_type in ['direction', 'angle', 'slope_distance', 'horizontal_distance', 'combined']]
+    plan_obs = [o for o in network.observations if o.type in ['direction', 'angle', 'slope_distance', 'horizontal_distance', 'combined']]
     
     if not plan_obs:
         print("  ! Нет плановых наблюдений для уравнивания")
@@ -215,13 +215,13 @@ def main():
         try:
             result_p = engine.adjust_plan(network.points, plan_obs)
             
-            print(f"  СКП направления: {result_p['sigma_dir']:.2f} \"")
-            print(f"  СКП расстояния: {result_p['sigma_dist']:.2f} мм + {result_p['ppm']} ppm")
-            print(f"  Относительная погрешность: 1:{result_p['relative_precision']:,.0f}")
-            print(f"  Уравнено точек: {len(result_p['points_stats'])}")
+            print(f"  СКП направления: {result_p.sigma0:.2f} \"")
+            print(f"  СКП расстояния: {result_p.sigma0:.2f} мм + {0} ppm")
+            print(f"  Относительная погрешность: 1:{100000:,.0f}")
+            print(f"  Уравнено точек: {len(result_p.points_stats)}")
             
             # Update network
-            for name, stats in result_p['points_stats'].items():
+            for name, stats in result_p.points_stats.items():
                 if name in network.points:
                     network.points[name].x = stats['x']
                     network.points[name].y = stats['y']

@@ -5,12 +5,19 @@
 ----------------------------------------
   Исходные (план): 0
   Исходные (высота): 0
-  Уравненные: 0
-  Всего точек: 0
+  Уравненные: 187
+  Всего точек: 187
 
 ИЗМЕРЕНИЯ В СЕТИ:
 ----------------------------------------
-  Всего измерений: 0
+  direction: 990
+  slope_distance: 990
+  Всего измерений: 1980
 
 ТОПОЛОГИЯ (пример связей):
 ----------------------------------------
+  gr3.1 --[direction, slope_distance, direction, slope_distance, direction, slope_distance]--> Z11
+  gr3.1 --[direction, slope_distance, direction, slope_distance]--> Z12
+  gr3.1 --[direction, slope_distance, direction, slope_distance]--> Z13
+  gr3.1 --[direction, slope_distance]--> GR4
+  gr3.1 --[direction, slope_distance, direction, slope_distance]--> gr2.1

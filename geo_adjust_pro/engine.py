@@ -207,10 +207,15 @@ class GeoAdjustEngine:
             message="Успешно"
         )
 
-    def adjust_plan(self) -> AdjustmentResult:
+    def adjust_plan(self, points: Dict, observations: List) -> AdjustmentResult:
         """
         Уравнивание плановой сети (нелинейная задача, итерационный процесс).
+        Принимает точки и наблюдения как аргументы.
         """
+        # Загружаем данные во внутреннюю структуру
+        self.points = points
+        self.observations = observations
+        
         logger.info("Запуск уравнивания плана...")
         
         max_iter = 10
@@ -224,6 +229,7 @@ class GeoAdjustEngine:
             else:
                 approx_coords[pid] = np.array([p.x or 0.0, p.y or 0.0])
 
+        final_iteration = 0
         for iteration in range(max_iter):
             rows, cols, data = [], [], []
             L_vec = []
@@ -235,7 +241,7 @@ class GeoAdjustEngine:
                 return AdjustmentResult(success=False, iterations=0, sigma0=0.0, message="Нет определяемых пунктов по плану")
             
             for obs in self.observations:
-                if obs.type == 'distance':
+                if obs.type == 'slope_distance':
                     i_pt = obs.from_point
                     j_pt = obs.to_point
                     
@@ -252,7 +258,6 @@ class GeoAdjustEngine:
                     if S0 < 1e-6:
                         continue
                     
-                    # Частные производные
                     a_Xi = -dX / S0
                     a_Yi = -dY / S0
                     a_Xj = dX / S0
@@ -261,11 +266,9 @@ class GeoAdjustEngine:
                     measured_S = obs.value
                     l = measured_S - S0
                     
-                    # Вес
                     sigma_S = 0.002 + 0.000002 * measured_S
                     w = 1.0 / (sigma_S ** 2)
                     
-                    # Заполнение матрицы
                     row_entries = []
                     col_entries = []
                     
@@ -291,7 +294,64 @@ class GeoAdjustEngine:
                         weights.append(w)
                         obs_count += 1
                 
-                # Здесь можно добавить обработку углов и направлений
+                elif obs.type == 'direction':
+                    i_pt = obs.from_point
+                    j_pt = obs.to_point
+                    
+                    if i_pt not in approx_coords or j_pt not in approx_coords:
+                        continue
+                    
+                    Xi, Yi = approx_coords[i_pt]
+                    Xj, Yj = approx_coords[j_pt]
+                    
+                    dX = Xj - Xi
+                    dY = Yj - Yi
+                    S0 = np.sqrt(dX**2 + dY**2)
+                    
+                    if S0 < 1e-6:
+                        continue
+                    
+                    az0 = np.arctan2(dX, dY) * 180 / np.pi
+                    if az0 < 0:
+                        az0 += 360
+                    
+                    measured_dir = obs.value
+                    
+                    rho = 206264.806
+                    a_Xi = dY / (S0**2) * rho
+                    a_Yi = -dX / (S0**2) * rho
+                    a_Xj = -dY / (S0**2) * rho
+                    a_Yj = dX / (S0**2) * rho
+                    
+                    l = measured_dir - az0
+                    
+                    sigma_dir = 5.0 / rho
+                    w = 1.0 / (sigma_dir ** 2)
+                    
+                    row_entries = []
+                    col_entries = []
+                    
+                    if i_pt in unknowns_map:
+                        idx_x, idx_y = unknowns_map[i_pt]
+                        row_entries.extend([a_Xi, a_Yi])
+                        col_entries.extend([idx_x, idx_y])
+                    else:
+                        l -= (a_Xi * approx_coords[i_pt][0] + a_Yi * approx_coords[i_pt][1])
+                    
+                    if j_pt in unknowns_map:
+                        idx_x, idx_y = unknowns_map[j_pt]
+                        row_entries.extend([a_Xj, a_Yj])
+                        col_entries.extend([idx_x, idx_y])
+                    else:
+                        l -= (a_Xj * approx_coords[j_pt][0] + a_Yj * approx_coords[j_pt][1])
+                    
+                    if row_entries:
+                        rows.extend([obs_count] * len(row_entries))
+                        cols.extend(col_entries)
+                        data.extend(row_entries)
+                        L_vec.append(l)
+                        weights.append(w)
+                        obs_count += 1
             
             if not rows:
                 break
@@ -308,34 +368,63 @@ class GeoAdjustEngine:
             except:
                 break
             
-            # Обновление приближенных координат
             max_dx = 0
             for pid, (idx_x, idx_y) in unknowns_map.items():
                 approx_coords[pid][0] += dx[idx_x]
                 approx_coords[pid][1] += dx[idx_y]
                 max_dx = max(max_dx, abs(dx[idx_x]), abs(dx[idx_y]))
             
+            final_iteration = iteration + 1
+            
             if max_dx < tol:
-                logger.info(f"Сходимость на итерации {iteration + 1}")
+                logger.info(f"Сходимость на итерации {final_iteration}")
                 break
         
-        # Финальный расчет статистик
-        # ... (аналогично высотам)
+        v = A @ dx - L_arr if obs_count > 0 else np.array([])
+        vTv = float(v.T @ P @ v) if len(v) > 0 else 0.0
+        dof = obs_count - n_unknowns
+        sigma0 = np.sqrt(vTv / dof) if dof > 0 else 0.0
         
-        # Обновление координат в точках
-        for pid, coords in approx_coords.items():
-            if pid in self.points and self.points[pid].plan_status not in ['initial', 'fixed']:
-                self.points[pid].x = coords[0]
-                self.points[pid].y = coords[1]
+        try:
+            if n_unknowns < 5000:
+                N_inv = sparse.linalg.inv(N)
+                N_inv_diag = N_inv.diagonal()
+            else:
+                N_inv_diag = 1.0 / np.maximum(N.diagonal(), 1e-10)
+        except:
+            N_inv_diag = np.ones(n_unknowns)
+        
+        points_stats = {}
+        for pid, (idx_x, idx_y) in unknowns_map.items():
+            var_x = N_inv_diag[idx_x] * (sigma0 ** 2)
+            var_y = N_inv_diag[idx_y] * (sigma0 ** 2)
+            std_x = np.sqrt(abs(var_x))
+            std_y = np.sqrt(abs(var_y))
+            
+            if pid in self.points:
+                self.points[pid].x = approx_coords[pid][0]
+                self.points[pid].y = approx_coords[pid][1]
                 self.points[pid].plan_status = 'adjusted'
+                
+                points_stats[pid] = {
+                    'x': approx_coords[pid][0],
+                    'y': approx_coords[pid][1],
+                    'std_x': std_x,
+                    'std_y': std_y,
+                    'cov_xy': 0.0
+                }
+        
+        logger.info(f"Уравнивание плана завершено. СКП: {sigma0*1000:.2f} мм, итераций: {final_iteration}")
         
         return AdjustmentResult(
             success=True,
-            iterations=iteration + 1,
-            sigma0=0.001, # Заглушка, нужен полный расчет
-            points_stats={},
-            message="Плановое уравнивание завершено"
+            iterations=final_iteration,
+            sigma0=sigma0,
+            points_stats=points_stats,
+            message="Плановое уравнивание завершено",
+            residuals=v.tolist() if len(v) > 0 else []
         )
+
 
 if __name__ == "__main__":
     print("GeoAdjustPro Engine loaded.")
