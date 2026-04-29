@@ -1,0 +1,389 @@
+OpenBLAS WARNING - could not determine the L2 cache size on this system, assuming 256k
+OpenBLAS WARNING - could not determine the L2 cache size on this system, assuming 256k
+/workspace/GeoAdjustPro/src/geoadjust/core/__init__.py:37: UserWarning: ProcessingPipeline недоступен: No module named 'seaborn'
+  warnings.warn(f"ProcessingPipeline недоступен: {e}")
+
+================================================================================
+ ПОЛНЫЙ ЦИКЛ РАБОТЫ ПРОГРАММЫ GeoAdjustPro
+================================================================================
+Дата начала: 2026-04-29 20:14:43
+Логирование: /workspace/pipeline_test.log
+
+================================================================================
+ ЭТАП 1: ИМПОРТ GSI ФАЙЛОВ
+================================================================================
+2026-04-29 20:14:45,062 - INFO - Парсинг файла: /workspace/test_real_mes/s5/niv/DOM0112 (1).GSI
+2026-04-29 20:14:45,062 - INFO - Используем улучшенный упрощенный парсер GSI
+2026-04-29 20:14:45,062 - INFO - Read 85 lines from /workspace/test_real_mes/s5/niv/DOM0112 (1).GSI
+2026-04-29 20:14:45,063 - INFO - Processing tacheometric measurement on line 3, station J1, codes {32, 331, 11}
+2026-04-29 20:14:45,063 - INFO - Processing tacheometric measurement on line 4, station V500, codes {32, 11, 332}
+2026-04-29 20:14:45,063 - INFO - Processing leveling measurement on line 5, station V500
+2026-04-29 20:14:45,063 - INFO - Processing tacheometric measurement on line 6, station V500, codes {32, 331, 11}
+2026-04-29 20:14:45,063 - INFO - Processing tacheometric measurement on line 7, station J501, codes {32, 11, 332}
+2026-04-29 20:14:45,064 - INFO - Processing leveling measurement on line 8, station J501
+2026-04-29 20:14:45,064 - INFO - Processing intermediate measurement on line 9, station L3
+2026-04-29 20:14:45,064 - INFO - Processing tacheometric measurement on line 9, station L3, codes {32, 11, 333}
+2026-04-29 20:14:45,064 - INFO - Processing tacheometric measurement on line 11, station J501, codes {32, 331, 11}
+2026-04-29 20:14:45,064 - INFO - Processing tacheometric measurement on line 12, station J502, codes {32, 11, 332}
+2026-04-29 20:14:45,064 - INFO - Processing leveling measurement on line 13, station J502
+2026-04-29 20:14:45,064 - INFO - Processing intermediate measurement on line 14, station G2
+2026-04-29 20:14:45,064 - INFO - Processing tacheometric measurement on line 14, station G2, codes {32, 11, 333}
+2026-04-29 20:14:45,064 - INFO - Processing tacheometric measurement on line 16, station J502, codes {32, 331, 11}
+2026-04-29 20:14:45,064 - INFO - Processing tacheometric measurement on line 17, station V505, codes {32, 11, 332}
+2026-04-29 20:14:45,064 - INFO - Processing leveling measurement on line 18, station V505
+2026-04-29 20:14:45,064 - INFO - Processing intermediate measurement on line 19, station G1
+2026-04-29 20:14:45,064 - INFO - Processing tacheometric measurement on line 19, station G1, codes {32, 11, 333}
+2026-04-29 20:14:45,065 - INFO - Processing intermediate measurement on line 21, station L2
+2026-04-29 20:14:45,065 - INFO - Processing tacheometric measurement on line 21, station L2, codes {32, 11, 333}
+2026-04-29 20:14:45,065 - INFO - Processing tacheometric measurement on line 23, station V505, codes {32, 331, 11}
+2026-04-29 20:14:45,065 - INFO - Processing tacheometric measurement on line 24, station V506, codes {32, 11, 332}
+2026-04-29 20:14:45,065 - INFO - Processing leveling measurement on line 25, station V506
+2026-04-29 20:14:45,065 - INFO - Processing tacheometric measurement on line 26, station V506, codes {32, 331, 11}
+2026-04-29 20:14:45,065 - INFO - Processing tacheometric measurement on line 27, station J508, codes {32, 11, 332}
+2026-04-29 20:14:45,065 - INFO - Processing leveling measurement on line 28, station J508
+2026-04-29 20:14:45,065 - INFO - Processing tacheometric measurement on line 29, station J508, codes {32, 331, 11}
+2026-04-29 20:14:45,065 - INFO - Processing tacheometric measurement on line 30, station J509, codes {32, 11, 332}
+2026-04-29 20:14:45,065 - INFO - Processing leveling measurement on line 31, station J509
+2026-04-29 20:14:45,065 - INFO - Processing intermediate measurement on line 32, station J509
+2026-04-29 20:14:45,065 - INFO - Processing tacheometric measurement on line 32, station J509, codes {32, 11, 333}
+2026-04-29 20:14:45,066 - INFO - Processing tacheometric measurement on line 34, station J509, codes {32, 331, 11}
+2026-04-29 20:14:45,066 - INFO - Processing intermediate measurement on line 35, station J509
+2026-04-29 20:14:45,066 - INFO - Processing tacheometric measurement on line 35, station J509, codes {32, 11, 333}
+2026-04-29 20:14:45,066 - INFO - Processing tacheometric measurement on line 37, station J509, codes {32, 11, 332}
+2026-04-29 20:14:45,066 - INFO - Processing leveling measurement on line 38, station J509
+2026-04-29 20:14:45,066 - INFO - Processing tacheometric measurement on line 39, station J509, codes {32, 331, 11}
+2026-04-29 20:14:45,066 - INFO - Processing intermediate measurement on line 40, station J509
+2026-04-29 20:14:45,066 - INFO - Processing tacheometric measurement on line 40, station J509, codes {32, 11, 333}
+2026-04-29 20:14:45,066 - INFO - Processing tacheometric measurement on line 42, station J566, codes {32, 11, 332}
+2026-04-29 20:14:45,066 - INFO - Processing leveling measurement on line 43, station J566
+2026-04-29 20:14:45,066 - INFO - Processing tacheometric measurement on line 44, station J566, codes {32, 331, 11}
+2026-04-29 20:14:45,066 - INFO - Processing intermediate measurement on line 45, station J566
+2026-04-29 20:14:45,066 - INFO - Processing tacheometric measurement on line 45, station J566, codes {32, 11, 333}
+2026-04-29 20:14:45,066 - INFO - Processing intermediate measurement on line 47, station J566
+2026-04-29 20:14:45,067 - INFO - Processing tacheometric measurement on line 47, station J566, codes {32, 11, 333}
+2026-04-29 20:14:45,067 - INFO - Processing tacheometric measurement on line 49, station J567, codes {32, 11, 332}
+2026-04-29 20:14:45,067 - INFO - Processing leveling measurement on line 50, station J567
+2026-04-29 20:14:45,067 - INFO - Processing tacheometric measurement on line 51, station J567, codes {32, 331, 11}
+2026-04-29 20:14:45,067 - INFO - Processing intermediate measurement on line 52, station J567
+2026-04-29 20:14:45,067 - INFO - Processing tacheometric measurement on line 52, station J567, codes {32, 11, 333}
+2026-04-29 20:14:45,067 - INFO - Processing intermediate measurement on line 54, station J567
+2026-04-29 20:14:45,067 - INFO - Processing tacheometric measurement on line 54, station J567, codes {32, 11, 333}
+2026-04-29 20:14:45,067 - INFO - Processing tacheometric measurement on line 56, station J568, codes {32, 11, 332}
+2026-04-29 20:14:45,067 - INFO - Processing leveling measurement on line 57, station J568
+2026-04-29 20:14:45,067 - INFO - Processing tacheometric measurement on line 58, station J568, codes {32, 331, 11}
+2026-04-29 20:14:45,067 - INFO - Processing tacheometric measurement on line 59, station J570, codes {32, 11, 332}
+2026-04-29 20:14:45,067 - INFO - Processing leveling measurement on line 60, station J570
+2026-04-29 20:14:45,068 - INFO - Processing tacheometric measurement on line 61, station J570, codes {32, 331, 11}
+2026-04-29 20:14:45,068 - INFO - Processing tacheometric measurement on line 62, station V580, codes {32, 11, 332}
+2026-04-29 20:14:45,068 - INFO - Processing leveling measurement on line 63, station V580
+2026-04-29 20:14:45,068 - INFO - Processing intermediate measurement on line 64, station V580
+2026-04-29 20:14:45,068 - INFO - Processing tacheometric measurement on line 64, station V580, codes {32, 11, 333}
+2026-04-29 20:14:45,068 - INFO - Processing intermediate measurement on line 66, station V580
+2026-04-29 20:14:45,068 - INFO - Processing tacheometric measurement on line 66, station V580, codes {32, 11, 333}
+2026-04-29 20:14:45,068 - INFO - Processing tacheometric measurement on line 68, station V580, codes {32, 331, 11}
+2026-04-29 20:14:45,068 - INFO - Processing tacheometric measurement on line 69, station V581, codes {32, 11, 332}
+2026-04-29 20:14:45,068 - INFO - Processing leveling measurement on line 70, station V581
+2026-04-29 20:14:45,068 - INFO - Processing tacheometric measurement on line 71, station V581, codes {32, 331, 11}
+2026-04-29 20:14:45,068 - INFO - Processing tacheometric measurement on line 72, station V600, codes {32, 11, 332}
+2026-04-29 20:14:45,069 - INFO - Processing leveling measurement on line 73, station V600
+2026-04-29 20:14:45,069 - INFO - Processing tacheometric measurement on line 74, station V600, codes {32, 331, 11}
+2026-04-29 20:14:45,069 - INFO - Processing tacheometric measurement on line 75, station V601, codes {32, 11, 332}
+2026-04-29 20:14:45,069 - INFO - Processing leveling measurement on line 76, station V601
+2026-04-29 20:14:45,069 - INFO - Processing tacheometric measurement on line 77, station V601, codes {32, 331, 11}
+2026-04-29 20:14:45,069 - INFO - Processing tacheometric measurement on line 78, station V602, codes {32, 11, 332}
+2026-04-29 20:14:45,069 - INFO - Processing leveling measurement on line 79, station V602
+2026-04-29 20:14:45,069 - INFO - Processing tacheometric measurement on line 80, station V602, codes {32, 331, 11}
+2026-04-29 20:14:45,069 - INFO - Processing tacheometric measurement on line 81, station V603, codes {32, 11, 332}
+2026-04-29 20:14:45,069 - INFO - Processing leveling measurement on line 82, station V603
+2026-04-29 20:14:45,081 - INFO - Processing tacheometric measurement on line 83, station V603, codes {32, 331, 11}
+2026-04-29 20:14:45,082 - INFO - Processing tacheometric measurement on line 84, station J2, codes {32, 11, 332}
+2026-04-29 20:14:45,082 - INFO - Processing leveling measurement on line 85, station J2
+2026-04-29 20:14:45,082 - INFO - GSI parser completed: 23 points, 83 observations, 0 traverses
+2026-04-29 20:14:45,082 - INFO -   ✓ Точек извлечено: 23
+2026-04-29 20:14:45,082 - INFO -   ✓ Наблюдений извлечено: 83
+2026-04-29 20:14:45,082 - INFO -   Пример точки: {'point_id': 'J1', 'point_type': 'station', 'x': None, 'y': None, 'h': None}
+2026-04-29 20:14:45,082 - INFO -   Пример наблюдения (тип): GSIObservation
+2026-04-29 20:14:45,082 - INFO - Парсинг файла: /workspace/test_real_mes/s5/niv/MIR0212.GSI
+2026-04-29 20:14:45,082 - INFO - Используем улучшенный упрощенный парсер GSI
+2026-04-29 20:14:45,082 - INFO - Read 216 lines from /workspace/test_real_mes/s5/niv/MIR0212.GSI
+2026-04-29 20:14:45,082 - INFO - Processing tacheometric measurement on line 3, station R1, codes {32, 331, 11}
+2026-04-29 20:14:45,082 - INFO - Processing tacheometric measurement on line 4, station J1, codes {32, 11, 332}
+2026-04-29 20:14:45,083 - INFO - Processing leveling measurement on line 5, station J1
+2026-04-29 20:14:45,083 - INFO - Processing tacheometric measurement on line 6, station J1, codes {32, 331, 11}
+2026-04-29 20:14:45,083 - INFO - Processing intermediate measurement on line 7, station L7
+2026-04-29 20:14:45,083 - INFO - Processing tacheometric measurement on line 7, station L7, codes {32, 11, 333}
+2026-04-29 20:14:45,083 - INFO - Processing intermediate measurement on line 9, station G7
+2026-04-29 20:14:45,083 - INFO - Processing tacheometric measurement on line 9, station G7, codes {32, 11, 333}
+2026-04-29 20:14:45,083 - INFO - Processing intermediate measurement on line 11, station G6
+2026-04-29 20:14:45,083 - INFO - Processing tacheometric measurement on line 11, station G6, codes {32, 11, 333}
+2026-04-29 20:14:45,083 - INFO - Processing tacheometric measurement on line 13, station J2, codes {32, 11, 332}
+2026-04-29 20:14:45,083 - INFO - Processing leveling measurement on line 14, station J2
+2026-04-29 20:14:45,083 - INFO - Processing tacheometric measurement on line 15, station J2, codes {32, 331, 11}
+2026-04-29 20:14:45,083 - INFO - Processing intermediate measurement on line 16, station G5
+2026-04-29 20:14:45,084 - INFO - Processing tacheometric measurement on line 16, station G5, codes {32, 11, 333}
+2026-04-29 20:14:45,084 - INFO - Processing intermediate measurement on line 18, station L5
+2026-04-29 20:14:45,084 - INFO - Processing tacheometric measurement on line 18, station L5, codes {32, 11, 333}
+2026-04-29 20:14:45,084 - INFO - Processing tacheometric measurement on line 20, station J3, codes {32, 11, 332}
+2026-04-29 20:14:45,084 - INFO - Processing leveling measurement on line 21, station J3
+2026-04-29 20:14:45,084 - INFO - Processing tacheometric measurement on line 22, station J3, codes {32, 331, 11}
+2026-04-29 20:14:45,084 - INFO - Processing intermediate measurement on line 23, station L4
+2026-04-29 20:14:45,084 - INFO - Processing tacheometric measurement on line 23, station L4, codes {32, 11, 333}
+2026-04-29 20:14:45,084 - INFO - Processing intermediate measurement on line 25, station L3
+2026-04-29 20:14:45,084 - INFO - Processing tacheometric measurement on line 25, station L3, codes {32, 11, 333}
+2026-04-29 20:14:45,084 - INFO - Processing intermediate measurement on line 27, station G4
+2026-04-29 20:14:45,084 - INFO - Processing tacheometric measurement on line 27, station G4, codes {32, 11, 333}
+2026-04-29 20:14:45,084 - INFO - Processing intermediate measurement on line 29, station L2
+2026-04-29 20:14:45,084 - INFO - Processing tacheometric measurement on line 29, station L2, codes {32, 11, 333}
+2026-04-29 20:14:45,085 - INFO - Processing tacheometric measurement on line 31, station J4, codes {32, 11, 332}
+2026-04-29 20:14:45,085 - INFO - Processing leveling measurement on line 32, station J4
+2026-04-29 20:14:45,085 - INFO - Processing tacheometric measurement on line 33, station J4, codes {32, 331, 11}
+2026-04-29 20:14:45,085 - INFO - Processing tacheometric measurement on line 34, station J5, codes {32, 11, 332}
+2026-04-29 20:14:45,085 - INFO - Processing leveling measurement on line 35, station J5
+2026-04-29 20:14:45,085 - INFO - Processing intermediate measurement on line 36, station J5
+2026-04-29 20:14:45,085 - INFO - Processing tacheometric measurement on line 36, station J5, codes {32, 11, 333}
+2026-04-29 20:14:45,085 - INFO - Processing intermediate measurement on line 38, station J5
+2026-04-29 20:14:45,085 - INFO - Processing tacheometric measurement on line 38, station J5, codes {32, 11, 333}
+2026-04-29 20:14:45,085 - INFO - Processing tacheometric measurement on line 40, station J5, codes {32, 331, 11}
+2026-04-29 20:14:45,085 - INFO - Processing intermediate measurement on line 41, station J5
+2026-04-29 20:14:45,085 - INFO - Processing tacheometric measurement on line 41, station J5, codes {32, 11, 333}
+2026-04-29 20:14:45,086 - INFO - Processing intermediate measurement on line 43, station J5
+2026-04-29 20:14:45,086 - INFO - Processing tacheometric measurement on line 43, station J5, codes {32, 11, 333}
+2026-04-29 20:14:45,086 - INFO - Processing tacheometric measurement on line 45, station V2, codes {32, 11, 332}
+2026-04-29 20:14:45,086 - INFO - Processing leveling measurement on line 46, station V2
+2026-04-29 20:14:45,086 - INFO - Processing tacheometric measurement on line 47, station V2, codes {32, 331, 11}
+2026-04-29 20:14:45,086 - INFO - Processing tacheometric measurement on line 48, station V3, codes {32, 11, 332}
+2026-04-29 20:14:45,086 - INFO - Processing leveling measurement on line 49, station V3
+2026-04-29 20:14:45,086 - INFO - Processing tacheometric measurement on line 50, station V3, codes {32, 331, 11}
+2026-04-29 20:14:45,086 - INFO - Processing tacheometric measurement on line 51, station R4, codes {32, 11, 332}
+2026-04-29 20:14:45,086 - INFO - Processing leveling measurement on line 52, station R4
+2026-04-29 20:14:45,086 - INFO - Processing tacheometric measurement on line 53, station R4, codes {32, 331, 11}
+2026-04-29 20:14:45,086 - INFO - Processing tacheometric measurement on line 54, station V4, codes {32, 11, 332}
+2026-04-29 20:14:45,086 - INFO - Processing leveling measurement on line 55, station V4
+2026-04-29 20:14:45,087 - INFO - Processing tacheometric measurement on line 56, station V4, codes {32, 331, 11}
+2026-04-29 20:14:45,087 - INFO - Processing tacheometric measurement on line 57, station V5, codes {32, 11, 332}
+2026-04-29 20:14:45,087 - INFO - Processing leveling measurement on line 58, station V5
+2026-04-29 20:14:45,087 - INFO - Processing tacheometric measurement on line 59, station V5, codes {32, 331, 11}
+2026-04-29 20:14:45,087 - INFO - Processing tacheometric measurement on line 60, station V6, codes {32, 11, 332}
+2026-04-29 20:14:45,087 - INFO - Processing leveling measurement on line 61, station V6
+2026-04-29 20:14:45,087 - INFO - Processing tacheometric measurement on line 64, station R4, codes {32, 331, 11}
+2026-04-29 20:14:45,087 - INFO - Processing tacheometric measurement on line 65, station V7, codes {32, 11, 332}
+2026-04-29 20:14:45,087 - INFO - Processing leveling measurement on line 66, station V7
+2026-04-29 20:14:45,087 - INFO - Processing tacheometric measurement on line 67, station V7, codes {32, 331, 11}
+2026-04-29 20:14:45,087 - INFO - Processing tacheometric measurement on line 68, station V8, codes {32, 11, 332}
+2026-04-29 20:14:45,087 - INFO - Processing leveling measurement on line 69, station V8
+2026-04-29 20:14:45,088 - INFO - Processing tacheometric measurement on line 70, station V8, codes {32, 331, 11}
+2026-04-29 20:14:45,088 - INFO - Processing tacheometric measurement on line 71, station V9, codes {32, 11, 332}
+2026-04-29 20:14:45,088 - INFO - Processing leveling measurement on line 72, station V9
+2026-04-29 20:14:45,088 - INFO - Processing tacheometric measurement on line 73, station V9, codes {32, 331, 11}
+2026-04-29 20:14:45,088 - INFO - Processing intermediate measurement on line 74, station G3
+2026-04-29 20:14:45,088 - INFO - Processing tacheometric measurement on line 74, station G3, codes {32, 11, 333}
+2026-04-29 20:14:45,088 - INFO - Processing tacheometric measurement on line 76, station J20, codes {32, 11, 332}
+2026-04-29 20:14:45,088 - INFO - Processing leveling measurement on line 77, station J20
+2026-04-29 20:14:45,088 - INFO - Processing tacheometric measurement on line 78, station J20, codes {32, 331, 11}
+2026-04-29 20:14:45,088 - INFO - Processing intermediate measurement on line 79, station G2
+2026-04-29 20:14:45,088 - INFO - Processing tacheometric measurement on line 79, station G2, codes {32, 11, 333}
+2026-04-29 20:14:45,088 - INFO - Processing intermediate measurement on line 81, station L1
+2026-04-29 20:14:45,088 - INFO - Processing tacheometric measurement on line 81, station L1, codes {32, 11, 333}
+2026-04-29 20:14:45,088 - INFO - Processing intermediate measurement on line 83, station G1
+2026-04-29 20:14:45,088 - INFO - Processing tacheometric measurement on line 83, station G1, codes {32, 11, 333}
+2026-04-29 20:14:45,089 - INFO - Processing tacheometric measurement on line 85, station V10, codes {32, 11, 332}
+2026-04-29 20:14:45,089 - INFO - Processing leveling measurement on line 86, station V10
+2026-04-29 20:14:45,089 - INFO - Processing tacheometric measurement on line 87, station V10, codes {32, 331, 11}
+2026-04-29 20:14:45,089 - INFO - Processing tacheometric measurement on line 88, station V11, codes {32, 11, 332}
+2026-04-29 20:14:45,089 - INFO - Processing leveling measurement on line 89, station V11
+2026-04-29 20:14:45,089 - INFO - Processing tacheometric measurement on line 90, station V11, codes {32, 331, 11}
+2026-04-29 20:14:45,089 - INFO - Processing tacheometric measurement on line 91, station V12, codes {32, 11, 332}
+2026-04-29 20:14:45,089 - INFO - Processing leveling measurement on line 92, station V12
+2026-04-29 20:14:45,101 - INFO - Processing tacheometric measurement on line 93, station V12, codes {32, 331, 11}
+2026-04-29 20:14:45,102 - INFO - Processing tacheometric measurement on line 94, station V13, codes {32, 11, 332}
+2026-04-29 20:14:45,102 - INFO - Processing leveling measurement on line 95, station V13
+2026-04-29 20:14:45,102 - INFO - Processing tacheometric measurement on line 96, station V13, codes {32, 331, 11}
+2026-04-29 20:14:45,102 - INFO - Processing tacheometric measurement on line 97, station V14, codes {32, 11, 332}
+2026-04-29 20:14:45,102 - INFO - Processing leveling measurement on line 98, station V14
+2026-04-29 20:14:45,102 - INFO - Processing tacheometric measurement on line 99, station V14, codes {32, 331, 11}
+2026-04-29 20:14:45,102 - INFO - Processing tacheometric measurement on line 100, station R2, codes {32, 11, 332}
+2026-04-29 20:14:45,102 - INFO - Processing leveling measurement on line 101, station R2
+2026-04-29 20:14:45,102 - INFO - Processing tacheometric measurement on line 102, station R2, codes {32, 331, 11}
+2026-04-29 20:14:45,103 - INFO - Processing tacheometric measurement on line 103, station V15, codes {32, 11, 332}
+2026-04-29 20:14:45,103 - INFO - Processing leveling measurement on line 104, station V15
+2026-04-29 20:14:45,103 - INFO - Processing tacheometric measurement on line 105, station V15, codes {32, 331, 11}
+2026-04-29 20:14:45,103 - INFO - Processing tacheometric measurement on line 106, station V16, codes {32, 11, 332}
+2026-04-29 20:14:45,103 - INFO - Processing leveling measurement on line 107, station V16
+2026-04-29 20:14:45,103 - INFO - Processing tacheometric measurement on line 108, station V16, codes {32, 331, 11}
+2026-04-29 20:14:45,103 - INFO - Processing tacheometric measurement on line 109, station V17, codes {32, 11, 332}
+2026-04-29 20:14:45,103 - INFO - Processing leveling measurement on line 110, station V17
+2026-04-29 20:14:45,103 - INFO - Processing tacheometric measurement on line 111, station V17, codes {32, 331, 11}
+2026-04-29 20:14:45,103 - INFO - Processing tacheometric measurement on line 112, station V999, codes {32, 11, 332}
+2026-04-29 20:14:45,103 - INFO - Processing leveling measurement on line 113, station V999
+2026-04-29 20:14:45,104 - INFO - Processing tacheometric measurement on line 114, station V999, codes {32, 331, 11}
+2026-04-29 20:14:45,104 - INFO - Processing tacheometric measurement on line 115, station R3, codes {32, 11, 332}
+2026-04-29 20:14:45,104 - INFO - Processing leveling measurement on line 116, station R3
+2026-04-29 20:14:45,104 - INFO - Processing tacheometric measurement on line 117, station R3, codes {32, 331, 11}
+2026-04-29 20:14:45,104 - INFO - Processing tacheometric measurement on line 118, station V18, codes {32, 11, 332}
+2026-04-29 20:14:45,104 - INFO - Processing leveling measurement on line 119, station V18
+2026-04-29 20:14:45,104 - INFO - Processing tacheometric measurement on line 120, station V18, codes {32, 331, 11}
+2026-04-29 20:14:45,104 - INFO - Processing tacheometric measurement on line 121, station J40, codes {32, 11, 332}
+2026-04-29 20:14:45,104 - INFO - Processing leveling measurement on line 122, station J40
+2026-04-29 20:14:45,104 - INFO - Processing tacheometric measurement on line 123, station J40, codes {32, 331, 11}
+2026-04-29 20:14:45,104 - INFO - Processing tacheometric measurement on line 124, station J41, codes {32, 11, 332}
+2026-04-29 20:14:45,105 - INFO - Processing leveling measurement on line 125, station J41
+2026-04-29 20:14:45,105 - INFO - Processing tacheometric measurement on line 126, station J41, codes {32, 331, 11}
+2026-04-29 20:14:45,105 - INFO - Processing tacheometric measurement on line 127, station J42, codes {32, 11, 332}
+2026-04-29 20:14:45,105 - INFO - Processing leveling measurement on line 128, station J42
+2026-04-29 20:14:45,105 - INFO - Processing tacheometric measurement on line 129, station J42, codes {32, 331, 11}
+2026-04-29 20:14:45,105 - INFO - Processing intermediate measurement on line 130, station G8
+2026-04-29 20:14:45,105 - INFO - Processing tacheometric measurement on line 130, station G8, codes {32, 11, 333}
+2026-04-29 20:14:45,105 - INFO - Processing tacheometric measurement on line 132, station V19, codes {32, 11, 332}
+2026-04-29 20:14:45,105 - INFO - Processing leveling measurement on line 133, station V19
+2026-04-29 20:14:45,105 - INFO - Processing tacheometric measurement on line 134, station V19, codes {32, 331, 11}
+2026-04-29 20:14:45,105 - INFO - Processing tacheometric measurement on line 135, station R1, codes {32, 11, 332}
+2026-04-29 20:14:45,105 - INFO - Processing leveling measurement on line 136, station R1
+2026-04-29 20:14:45,106 - INFO - Processing tacheometric measurement on line 139, station R3, codes {32, 331, 11}
+2026-04-29 20:14:45,106 - INFO - Processing tacheometric measurement on line 140, station V20, codes {32, 11, 332}
+2026-04-29 20:14:45,106 - INFO - Processing leveling measurement on line 141, station V20
+2026-04-29 20:14:45,106 - INFO - Processing tacheometric measurement on line 142, station V20, codes {32, 331, 11}
+2026-04-29 20:14:45,106 - INFO - Processing tacheometric measurement on line 143, station V21, codes {32, 11, 332}
+2026-04-29 20:14:45,106 - INFO - Processing leveling measurement on line 144, station V21
+2026-04-29 20:14:45,106 - INFO - Processing tacheometric measurement on line 145, station V21, codes {32, 331, 11}
+2026-04-29 20:14:45,106 - INFO - Processing tacheometric measurement on line 146, station V22, codes {32, 11, 332}
+2026-04-29 20:14:45,106 - INFO - Processing leveling measurement on line 147, station V22
+2026-04-29 20:14:45,106 - INFO - Processing tacheometric measurement on line 148, station V22, codes {32, 331, 11}
+2026-04-29 20:14:45,107 - INFO - Processing tacheometric measurement on line 149, station J60, codes {32, 11, 332}
+2026-04-29 20:14:45,107 - INFO - Processing leveling measurement on line 150, station J60
+2026-04-29 20:14:45,107 - INFO - Processing tacheometric measurement on line 151, station J60, codes {32, 331, 11}
+2026-04-29 20:14:45,107 - INFO - Processing tacheometric measurement on line 152, station V23, codes {32, 11, 332}
+2026-04-29 20:14:45,107 - INFO - Processing leveling measurement on line 153, station V23
+2026-04-29 20:14:45,107 - INFO - Processing intermediate measurement on line 154, station V23
+2026-04-29 20:14:45,107 - INFO - Processing tacheometric measurement on line 154, station V23, codes {32, 11, 333}
+2026-04-29 20:14:45,107 - INFO - Processing tacheometric measurement on line 156, station V23, codes {32, 331, 11}
+2026-04-29 20:14:45,107 - INFO - Processing tacheometric measurement on line 157, station V24, codes {32, 11, 332}
+2026-04-29 20:14:45,107 - INFO - Processing leveling measurement on line 158, station V24
+2026-04-29 20:14:45,107 - INFO - Processing tacheometric measurement on line 159, station V24, codes {32, 331, 11}
+2026-04-29 20:14:45,107 - INFO - Processing tacheometric measurement on line 160, station J70, codes {32, 11, 332}
+2026-04-29 20:14:45,108 - INFO - Processing leveling measurement on line 161, station J70
+2026-04-29 20:14:45,108 - INFO - Processing tacheometric measurement on line 162, station J70, codes {32, 331, 11}
+2026-04-29 20:14:45,108 - INFO - Processing tacheometric measurement on line 163, station V25, codes {32, 11, 332}
+2026-04-29 20:14:45,108 - INFO - Processing leveling measurement on line 164, station V25
+2026-04-29 20:14:45,108 - INFO - Processing intermediate measurement on line 165, station V25
+2026-04-29 20:14:45,108 - INFO - Processing tacheometric measurement on line 165, station V25, codes {32, 11, 333}
+2026-04-29 20:14:45,108 - INFO - Processing intermediate measurement on line 167, station V25
+2026-04-29 20:14:45,108 - INFO - Processing tacheometric measurement on line 167, station V25, codes {32, 11, 333}
+2026-04-29 20:14:45,108 - INFO - Processing intermediate measurement on line 169, station V25
+2026-04-29 20:14:45,121 - INFO - Processing tacheometric measurement on line 169, station V25, codes {32, 11, 333}
+2026-04-29 20:14:45,122 - INFO - Processing intermediate measurement on line 171, station V25
+2026-04-29 20:14:45,122 - INFO - Processing tacheometric measurement on line 171, station V25, codes {32, 11, 333}
+2026-04-29 20:14:45,122 - INFO - Processing tacheometric measurement on line 173, station V25, codes {32, 331, 11}
+2026-04-29 20:14:45,122 - INFO - Processing tacheometric measurement on line 174, station V26, codes {32, 11, 332}
+2026-04-29 20:14:45,122 - INFO - Processing leveling measurement on line 175, station V26
+2026-04-29 20:14:45,122 - INFO - Processing tacheometric measurement on line 176, station V26, codes {32, 331, 11}
+2026-04-29 20:14:45,122 - INFO - Processing tacheometric measurement on line 177, station V27, codes {32, 11, 332}
+2026-04-29 20:14:45,122 - INFO - Processing leveling measurement on line 178, station V27
+2026-04-29 20:14:45,122 - INFO - Processing tacheometric measurement on line 179, station V27, codes {32, 331, 11}
+2026-04-29 20:14:45,123 - INFO - Processing tacheometric measurement on line 180, station V28, codes {32, 11, 332}
+2026-04-29 20:14:45,123 - INFO - Processing leveling measurement on line 181, station V28
+2026-04-29 20:14:45,123 - INFO - Processing tacheometric measurement on line 182, station V28, codes {32, 331, 11}
+2026-04-29 20:14:45,123 - INFO - Processing tacheometric measurement on line 183, station V29, codes {32, 11, 332}
+2026-04-29 20:14:45,123 - INFO - Processing leveling measurement on line 184, station V29
+2026-04-29 20:14:45,123 - INFO - Processing tacheometric measurement on line 185, station V29, codes {32, 331, 11}
+2026-04-29 20:14:45,123 - INFO - Processing tacheometric measurement on line 186, station V30, codes {32, 11, 332}
+2026-04-29 20:14:45,123 - INFO - Processing leveling measurement on line 187, station V30
+2026-04-29 20:14:45,123 - INFO - Processing tacheometric measurement on line 188, station V30, codes {32, 331, 11}
+2026-04-29 20:14:45,123 - INFO - Processing tacheometric measurement on line 189, station V998, codes {32, 11, 332}
+2026-04-29 20:14:45,123 - INFO - Processing leveling measurement on line 190, station V998
+2026-04-29 20:14:45,124 - INFO - Processing tacheometric measurement on line 191, station V998, codes {32, 331, 11}
+2026-04-29 20:14:45,124 - INFO - Processing tacheometric measurement on line 192, station V998, codes {32, 11, 332}
+2026-04-29 20:14:45,124 - INFO - Processing leveling measurement on line 193, station V998
+2026-04-29 20:14:45,124 - INFO - Processing tacheometric measurement on line 194, station V998, codes {32, 331, 11}
+2026-04-29 20:14:45,124 - INFO - Processing tacheometric measurement on line 195, station V998, codes {32, 11, 332}
+2026-04-29 20:14:45,124 - INFO - Processing leveling measurement on line 196, station V998
+2026-04-29 20:14:45,124 - INFO - Processing intermediate measurement on line 197, station V998
+2026-04-29 20:14:45,124 - INFO - Processing tacheometric measurement on line 197, station V998, codes {32, 11, 333}
+2026-04-29 20:14:45,124 - INFO - Processing tacheometric measurement on line 199, station V998, codes {32, 331, 11}
+2026-04-29 20:14:45,124 - INFO - Processing tacheometric measurement on line 200, station V998, codes {32, 11, 332}
+2026-04-29 20:14:45,125 - INFO - Processing leveling measurement on line 201, station V998
+2026-04-29 20:14:45,125 - INFO - Processing tacheometric measurement on line 202, station V998, codes {32, 331, 11}
+2026-04-29 20:14:45,125 - INFO - Processing tacheometric measurement on line 203, station V31, codes {32, 11, 332}
+2026-04-29 20:14:45,125 - INFO - Processing leveling measurement on line 204, station V31
+2026-04-29 20:14:45,125 - INFO - Processing tacheometric measurement on line 205, station V31, codes {32, 331, 11}
+2026-04-29 20:14:45,125 - INFO - Processing tacheometric measurement on line 206, station V32, codes {32, 11, 332}
+2026-04-29 20:14:45,125 - INFO - Processing leveling measurement on line 207, station V32
+2026-04-29 20:14:45,125 - INFO - Processing tacheometric measurement on line 208, station V32, codes {32, 331, 11}
+2026-04-29 20:14:45,125 - INFO - Processing tacheometric measurement on line 209, station V33, codes {32, 11, 332}
+2026-04-29 20:14:45,125 - INFO - Processing leveling measurement on line 210, station V33
+2026-04-29 20:14:45,126 - INFO - Processing tacheometric measurement on line 211, station V33, codes {32, 331, 11}
+2026-04-29 20:14:45,126 - INFO - Processing tacheometric measurement on line 212, station V34, codes {32, 11, 332}
+2026-04-29 20:14:45,126 - INFO - Processing leveling measurement on line 213, station V34
+2026-04-29 20:14:45,126 - INFO - Processing tacheometric measurement on line 214, station V34, codes {32, 331, 11}
+2026-04-29 20:14:45,126 - INFO - Processing tacheometric measurement on line 215, station R3, codes {32, 11, 332}
+2026-04-29 20:14:45,126 - INFO - Processing leveling measurement on line 216, station R3
+2026-04-29 20:14:45,126 - INFO - GSI parser completed: 64 points, 210 observations, 0 traverses
+2026-04-29 20:14:45,126 - INFO -   ✓ Точек извлечено: 64
+2026-04-29 20:14:45,126 - INFO -   ✓ Наблюдений извлечено: 210
+2026-04-29 20:14:45,126 - INFO -   Пример точки: {'point_id': 'R1', 'point_type': 'station', 'x': None, 'y': None, 'h': None}
+2026-04-29 20:14:45,126 - INFO -   Пример наблюдения (тип): GSIObservation
+2026-04-29 20:14:45,126 - INFO - 
+ВСЕГО после импорта:
+2026-04-29 20:14:45,126 - INFO -   Точек: 87
+2026-04-29 20:14:45,126 - INFO -   Наблюдений: 293
+
+================================================================================
+ ЭТАП 2: ПРЕДОБРАБОТКА ДАННЫХ
+================================================================================
+2026-04-29 20:14:45,127 - INFO - Входные данные: 87 точек, 293 наблюдений
+2026-04-29 20:14:45,127 - WARNING -   ! Предобработка не выполнена: 'PreprocessingModule' object has no attribute 'process'
+Traceback (most recent call last):
+  File "/workspace/test_full_pipeline.py", line 102, in test_preprocessing
+    processed_data = preprocessor.process({
+                     ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PreprocessingModule' object has no attribute 'process'
+
+================================================================================
+ ЭТАП 3: УРАВНИВАНИЕ
+================================================================================
+2026-04-29 20:14:45,128 - INFO - Данные для уравнивания: 87 точек, 293 наблюдений
+2026-04-29 20:14:45,128 - ERROR -   ✗ Ошибка уравнивания: 'list' object has no attribute 'values'
+Traceback (most recent call last):
+  File "/workspace/test_full_pipeline.py", line 149, in test_adjustment
+    A, L = builder.build_adjustment_matrix(points, observations)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/GeoAdjustPro/src/geoadjust/core/adjustment/equations_builder.py", line 84, in build_adjustment_matrix
+    has_heights = any(p.h is not None for p in points.values())
+                                               ^^^^^^^^^^^^^
+AttributeError: 'list' object has no attribute 'values'
+
+================================================================================
+ ЭТАП 4: ВЫГРУЗКА ОТЧЕТОВ (GOST)
+================================================================================
+2026-04-29 20:14:45,311 - ERROR -   ✗ Ошибка экспорта отчета: 'GOSTReportGenerator' object has no attribute 'generate'
+Traceback (most recent call last):
+  File "/workspace/test_full_pipeline.py", line 195, in test_report_export
+    report_content = generator.generate({
+                     ^^^^^^^^^^^^^^^^^^
+AttributeError: 'GOSTReportGenerator' object has no attribute 'generate'
+
+================================================================================
+ ЭТАП 5: СХЕМА СЕТИ (DXF)
+================================================================================
+2026-04-29 20:14:45,312 - ERROR -   ✗ Ошибка экспорта DXF: Библиотека ezdxf не установлена. Установите её командой: pip install ezdxf
+Traceback (most recent call last):
+  File "/workspace/test_full_pipeline.py", line 235, in test_dxf_export
+    exporter = DXFExporter()
+               ^^^^^^^^^^^^^
+  File "/workspace/GeoAdjustPro/src/geoadjust/io/export/dxf_export.py", line 68, in __init__
+    raise ImportError(
+ImportError: Библиотека ezdxf не установлена. Установите её командой: pip install ezdxf
+
+================================================================================
+ ИТОГОВЫЙ ОТЧЕТ
+================================================================================
+2026-04-29 20:14:45,322 - INFO - ✓ import: {'points': 87, 'observations': 293}
+2026-04-29 20:14:45,322 - INFO - ✓ preprocessing: {'points': 87, 'observations': 293}
+2026-04-29 20:14:45,322 - INFO - ✗ adjustment: failed
+2026-04-29 20:14:45,322 - INFO - ✗ report_export: failed
+2026-04-29 20:14:45,322 - INFO - ✗ network_scheme: failed
+
+================================================================================
+ ВЫХОДНЫЕ ФАЙЛЫ
+================================================================================
+
+Дата завершения: 2026-04-29 20:14:45
