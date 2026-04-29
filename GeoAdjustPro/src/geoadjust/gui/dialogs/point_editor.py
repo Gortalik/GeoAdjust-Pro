@@ -78,6 +78,16 @@ class PointEditorDialog(QDialog):
         self.type_combo.currentIndexChanged.connect(self._on_type_changed)
         layout.addRow("Тип пункта:", self.type_combo)
         
+        # Статус плановых координат
+        self.plan_status_combo = QComboBox()
+        self.plan_status_combo.addItems(["initial", "working"])
+        layout.addRow("Статус плана:", self.plan_status_combo)
+        
+        # Статус высоты
+        self.height_status_combo = QComboBox()
+        self.height_status_combo.addItems(["initial", "working"])
+        layout.addRow("Статус высоты:", self.height_status_combo)
+        
         # Описание
         self.description_edit = QLineEdit()
         self.description_edit.setPlaceholderText("Описание местоположения")
@@ -204,6 +214,17 @@ class PointEditorDialog(QDialog):
         type_index = {'fixed': 0, 'free': 1, 'approximate': 2}.get(point_type, 1)
         self.type_combo.setCurrentIndex(type_index)
         
+        # Статусы плана и высоты
+        plan_status = self.point_data.get('plan_status', 'working')
+        plan_idx = self.plan_status_combo.findText(plan_status)
+        if plan_idx >= 0:
+            self.plan_status_combo.setCurrentIndex(plan_idx)
+        
+        height_status = self.point_data.get('height_status', 'working')
+        height_idx = self.height_status_combo.findText(height_status)
+        if height_idx >= 0:
+            self.height_status_combo.setCurrentIndex(height_idx)
+        
         # Класс
         point_class = self.point_data.get('class', '4 класс')
         class_index = self.class_combo.findText(point_class)
@@ -255,6 +276,8 @@ class PointEditorDialog(QDialog):
             'description': self.description_edit.text().strip(),
             'type': type_map[self.type_combo.currentIndex()],
             'class': self.class_combo.currentText(),
+            'plan_status': self.plan_status_combo.currentText(),
+            'height_status': self.height_status_combo.currentText(),
             'x': self.x_spin.value(),
             'y': self.y_spin.value(),
             'h': self.h_spin.value() if self.has_height_check.isChecked() else None,

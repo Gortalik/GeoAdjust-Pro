@@ -42,10 +42,10 @@ class PointsTableView(QTableView):
     def _setup_model(self):
         """Настройка модели данных"""
         from PyQt5.QtGui import QStandardItemModel, QStandardItem
-        self.model = QStandardItemModel(0, 8, self)
+        self.model = QStandardItemModel(0, 10, self)
         self.model.setHorizontalHeaderLabels([
-            "ID", "Наименование", "Тип", "X (м)", "Y (м)", 
-            "H (м)", "Прибор", "Примечание"
+            "ID", "Наименование", "Тип", "Статус плана", "Статус высоты", 
+            "X (м)", "Y (м)", "H (м)", "Прибор", "Примечание"
         ])
         self.setModel(self.model)
     
@@ -59,6 +59,8 @@ class PointsTableView(QTableView):
                 point.get('id', ''),
                 point.get('name', ''),
                 point.get('coord_type', 'FREE'),
+                point.get('plan_status', 'working'),
+                point.get('height_status', 'working'),
                 point.get('x', 0),
                 point.get('y', 0),
                 point.get('h', 0),
@@ -123,10 +125,12 @@ class PointsTableView(QTableView):
         # Получение данных пункта
         point_data = {
             'name': model.index(row, 0).data() or '',
-            'x': model.index(row, 3).data() or '',
-            'y': model.index(row, 4).data() or '',
-            'h': model.index(row, 5).data() or '',
-            'type': model.index(row, 2).data() or 'free'
+            'x': model.index(row, 5).data() or '',
+            'y': model.index(row, 6).data() or '',
+            'h': model.index(row, 7).data() or '',
+            'type': model.index(row, 2).data() or 'free',
+            'plan_status': model.index(row, 3).data() or 'working',
+            'height_status': model.index(row, 4).data() or 'working'
         }
 
         # Вызов диалога редактирования
@@ -138,9 +142,11 @@ class PointsTableView(QTableView):
             model.setData(model.index(row, 0), updated_data['name'])
             model.setData(model.index(row, 1), updated_data['name'])  # Наименование
             model.setData(model.index(row, 2), updated_data['type'])
-            model.setData(model.index(row, 3), str(updated_data['x']))
-            model.setData(model.index(row, 4), str(updated_data['y']))
-            model.setData(model.index(row, 5), str(updated_data['h']))
+            model.setData(model.index(row, 3), updated_data.get('plan_status', 'working'))
+            model.setData(model.index(row, 4), updated_data.get('height_status', 'working'))
+            model.setData(model.index(row, 5), str(updated_data['x']))
+            model.setData(model.index(row, 6), str(updated_data['y']))
+            model.setData(model.index(row, 7), str(updated_data['h']) if updated_data['h'] is not None else '')
 
     def _delete_point(self):
         """Удаление пункта"""
@@ -177,10 +183,12 @@ class PointsTableView(QTableView):
         # Получение данных пункта
         point_data = {
             'name': model.index(row, 0).data() or '',
-            'x': model.index(row, 3).data() or '',
-            'y': model.index(row, 4).data() or '',
-            'h': model.index(row, 5).data() or '',
-            'type': model.index(row, 2).data() or 'free'
+            'x': model.index(row, 5).data() or '',
+            'y': model.index(row, 6).data() or '',
+            'h': model.index(row, 7).data() or '',
+            'type': model.index(row, 2).data() or 'free',
+            'plan_status': model.index(row, 3).data() or 'working',
+            'height_status': model.index(row, 4).data() or 'working'
         }
 
         # Показ диалога свойств
