@@ -1,35 +1,37 @@
 ```
-# Output directories
-geoadjust_output/
-test_output/
-
 # Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-env/
-venv/
-.venv/
-.venv*/
-.ENV
-.ENV*/
-.egg-info/
-*.egg-info/
-*.egg
-dist/
-build/
-*.so
-*.dylib
-*.dll
 
 # Logs
 *.log
 
+# Output directories
+geoadjust_output/
+test_output/
+
+# Temporary and build files
+*.tmp
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.local
+*.env.*
+
 # Coverage
 .coverage
+coverage/
 htmlcov/
-.coverage.*
-.coverage.xml
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
 ```
