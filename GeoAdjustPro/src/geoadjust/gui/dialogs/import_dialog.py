@@ -812,17 +812,20 @@ class ImportDialog(QDialog):
 
         observations = []
         for obs in data.get('observations', []):
-            if hasattr(obs, 'horizontal_angle') or hasattr(obs, 'zenith_angle') or hasattr(obs, 'slope_distance'):
-                observations.append(obs)
-            else:
-                observations.append({
-                    'from_point': getattr(obs, 'from_point_id', ''),
-                    'to_point': getattr(obs, 'to_point_id', ''),
-                    'type': getattr(obs, 'obs_type', 'direction'),
-                    'value': getattr(obs, 'value', 0),
-                    'from_setup_id': getattr(obs, 'from_setup_id', ''),
-                    'face_position': getattr(obs, 'face_position', None)
-                })
+            # Always convert to dictionary format for consistency (same as SDR)
+            obs_dict = {
+                'obs_id': getattr(obs, 'obs_id', ''),
+                'from_setup_id': getattr(obs, 'from_setup_id', ''),
+                'from_point_id': getattr(obs, 'from_point_id', ''),
+                'to_point_id': getattr(obs, 'to_point_id', ''),
+                'obs_type': getattr(obs, 'obs_type', 'combined'),
+                'face_position': getattr(obs, 'face_position', None),
+                'horizontal_angle': getattr(obs, 'horizontal_angle', None),
+                'zenith_angle': getattr(obs, 'zenith_angle', None),
+                'slope_distance': getattr(obs, 'slope_distance', None),
+                'raw_line': getattr(obs, 'raw_line', None)
+            }
+            observations.append(obs_dict)
 
         return {
             'points': points,

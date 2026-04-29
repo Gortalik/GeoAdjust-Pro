@@ -5,7 +5,7 @@
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget,
-    QLabel, QTreeWidget, QTreeWidgetItem
+    QLabel, QTreeWidget, QTreeWidgetItem, QTableWidget, QHeaderView
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
@@ -98,9 +98,22 @@ class LeftPanelWidget(QWidget):
 
         # Создаем виджет станций
         self.stations_content = StationsDockContent(self)
+        self.stations_content.station_selected.connect(self._on_station_selected)
         layout.addWidget(self.stations_content)
 
         return widget
+
+    def _on_station_selected(self, station_name):
+        """Передача сигнала выбора станции"""
+        # Защита от рекурсии
+        if hasattr(self, '_emitting') and self._emitting:
+            return
+
+        self._emitting = True
+        try:
+            self.station_selected.emit(station_name)
+        finally:
+            self._emitting = False
 
     def create_courses_tab(self):
         """Создание вкладки ходов"""
@@ -114,14 +127,23 @@ class LeftPanelWidget(QWidget):
         layout.addWidget(title)
 
         # Дерево ходов
-        self.courses_tree = QTreeWidget()
-        self.courses_tree.setHeaderLabel("Ходы и измерения")
-        self.courses_tree.itemClicked.connect(self._on_course_item_clicked)
+        self.traverses_table = QTableWidget()
+        self.traverses_table.setColumnCount(7)
+        self.traverses_table.setHorizontalHeaderLabels(["Флаг", "Примечания", "Ход", "Пункты", "Класс Н", "Комплект реек, пр.", "Комплект реек, обр."])
+        self.traverses_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.traverses_table.setAlternatingRowColors(True)
+        self.traverses_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.traverses_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.traverses_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.traverses_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.traverses_table.setSortingEnabled(True)
+        self.traverses_table.itemDoubleClicked.connect(self._on_traverse_double_clicked)
 
-        # Добавляем корневой элемент
-        root = QTreeWidgetItem(self.courses_tree)
-        root.setText(0, "Нивелирные ходы")
-        root.setExpanded(True)
+        # Для совместимости
+        self.courses_tree = self.traverses_table
+
+        # Подключаем сигналы
+        # self.courses_tree.itemClicked.connect(self._on_course_item_clicked)  # Убрано для таблицы
 
         layout.addWidget(self.courses_tree)
 
@@ -160,62 +182,62 @@ class LeftPanelWidget(QWidget):
 
     def update_courses(self, courses_data):
         """Обновление данных ходов"""
-        self.courses_tree.clear()
+        self.traverses_table.setRowCount(0)
 
-        root = QTreeWidgetItem(self.courses_tree)
-        root.setText(0, "Нивелирные ходы")
-        root.setExpanded(True)
+        for i, course in enumerate(courses_data or []):
+            row = self.traverses_table.rowCount()
+            self.traverses_table.insertRow(row)
 
-        for course in courses_data or []:
-            course_item = QTreeWidgetItem(root)
-            course_item.setText(0, f"Ход {course['course_id']}")
+            # Флаг - пусто или чекбокс
+            flag_item = QTableWidgetItem("")
+            flag_item.setFlags(flag_item.flags() & ~Qt.ItemIsEditable)
+            self.traverses_table.setItem(row, 0, flag_item)
 
-            # Добавляем станции хода
-            for station in course.get('stations', []):
-                station_item = QTreeWidgetItem(course_item)
-                station_item.setText(0, f"Станция: {station}")
+            # Примечания - пусто
+            notes_item = QTableWidgetItem("")
+            notes_item.setFlags(notes_item.flags() & ~Qt.ItemIsEditable)
+            self.traverses_table.setItem(row, 1, notes_item)
 
-            # Добавляем измерения хода
-            measurements_item = QTreeWidgetItem(course_item)
-            measurements_item.setText(0, f"Измерения ({len(course.get('measurements', []))})")
+            # Ход - название
+            traverse_item = QTableWidgetItem(course.get('course_id', f'Course {i+1}'))
+            traverse_item.setData(Qt.UserRole, course)  # Сохраняем данные хода
+            traverse_item.setFlags(traverse_item.flags() & ~Qt.ItemIsEditable)
+            self.traverses_table.setItem(row, 2, traverse_item)
 
-            for measurement in course.get('measurements', []):
-                # measurement - словарь после конвертации в main_window.py
-                if isinstance(measurement, dict):
-                    from_point = measurement.get('from_point', 'unknown')
-                    to_point = measurement.get('to_point', 'unknown')
-                    value = measurement.get('value', 0.0)
-                    meas_item = QTreeWidgetItem(measurements_item)
-                    meas_item.setText(0, f"{from_point} → {to_point}: {value:.6f}")
+            # Пункты - перечень через запятую
+            points_str = ", ".join(course.get('stations', []))
+            points_item = QTableWidgetItem(points_str)
+            points_item.setFlags(points_item.flags() & ~Qt.ItemIsEditable)
+            self.traverses_table.setItem(row, 3, points_item)
 
-        self.courses_tree.expandAll()
+            # Класс Н
+            class_item = QTableWidgetItem("IV класс")
+            class_item.setFlags(class_item.flags() & ~Qt.ItemIsEditable)
+            self.traverses_table.setItem(row, 4, class_item)
 
-    def update_points(self, points_data):
-        """Обновление данных пунктов ПВО"""
-        if hasattr(self.points_table, 'set_points'):
-            self.points_table.set_points(points_data)
+            # Комплект реек, пр.
+            rods_pr_item = QTableWidgetItem("")
+            rods_pr_item.setFlags(rods_pr_item.flags() & ~Qt.ItemIsEditable)
+            self.traverses_table.setItem(row, 5, rods_pr_item)
 
-    def _on_course_item_clicked(self, item, column):
-        """Обработка клика по элементу хода"""
-        text = item.text(column)
-        if text == "Нивелирные ходы":
-            # Двойной клик на корне - показать все измерения
-            self.course_selected.emit("ALL_COURSES")
-        elif text.startswith("Ход "):
-            course_id = text.replace("Ход ", "")
-            self.course_selected.emit(course_id)
-        elif text.startswith("Станция: "):
-            station_name = text.replace("Станция: ", "")
-            # Передаем session_id для фильтрации
-            session_id = self._station_to_session.get(station_name, station_name)
-            self.station_selected.emit(session_id)
-        elif " → " in text:
-            # Это измерение - можно выделить соответствующую станцию
-            parts = text.split(" → ")
-            if parts:
-                station_name = parts[0].strip()
-                session_id = self._station_to_session.get(station_name, station_name)
-                self.station_selected.emit(session_id)
+            # Комплект реек, обр.
+            rods_obr_item = QTableWidgetItem("")
+            rods_obr_item.setFlags(rods_obr_item.flags() & ~Qt.ItemIsEditable)
+            self.traverses_table.setItem(row, 6, rods_obr_item)
+
+    def _on_traverse_double_clicked(self, item):
+        """Обработка двойного клика по ходу - открываем окно измерений"""
+        row = item.row()
+        traverse_item = self.traverses_table.item(row, 2)  # Колонка "Ход"
+        if traverse_item:
+            traverse_data = traverse_item.data(Qt.UserRole)
+            if traverse_data:
+                course_id = traverse_data.get('course_id', '')
+                logger.info(f"Double clicked on traverse {course_id}, opening measurements dialog")
+                # Отправляем данные хода для открытия окна измерений
+                self.course_selected.emit(course_id)
+
+
 
     # Методы для совместимости с существующим кодом
     def get_stations_content(self):

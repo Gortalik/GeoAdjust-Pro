@@ -169,47 +169,53 @@ def main():
         
         # Создание менеджера проектов
         project_manager = ProjectManager()
-        
+
         # Получение списка недавних проектов
         recent_projects = [p['path'] for p in project_manager.get_recent_projects()]
-        
+
+        # Создание менеджера проектов
+        project_manager = ProjectManager()
+
+        # Получение списка недавних проектов
+        recent_projects = [p['path'] for p in project_manager.get_recent_projects()]
+
         # Создание и показ приветственного диалога
         print("Отображение приветственного диалога...")
         welcome_dialog = WelcomeDialog(recent_projects=recent_projects)
-        
+
         # Переменная для хранения главного окна
         main_window = None
-        
+
         # Обработчики сигналов приветственного диалога
         def create_new_project():
             """Создание нового проекта с настройками по умолчанию"""
             nonlocal main_window
             logger.info("Создание нового проекта с настройками по умолчанию")
-            
+
             try:
                 # Создание директории по умолчанию
                 default_project_path = Path.home() / "P-of-Geo-Meas Projects"
                 default_project_path.mkdir(parents=True, exist_ok=True)
-                
+
                 # Проверка существования проекта с именем по умолчанию и генерация уникального имени
                 project_name = "Новый проект"
                 project_dir = default_project_path / f"{project_name}.gad"
                 counter = 1
-                
+
                 while project_dir.exists():
                     project_name = f"Новый проект {counter}"
                     project_dir = default_project_path / f"{project_name}.gad"
                     counter += 1
-                
+
                 # Создание проекта с уникальным именем
                 project = project_manager.create_project(
                     project_path=default_project_path,
                     project_name=project_name
                 )
-                
+
                 # Сохранение проекта для создания всех файлов
                 project.save()
-                
+
                 # Создание главного окна с проектом
                 config = MainWindowConfig(
                     interface_type=InterfaceType.RIBBON,
@@ -220,12 +226,12 @@ def main():
                 )
                 main_window = MainWindow(config)
                 main_window.current_project = project
-                
+
                 # Закрываем приветственный диалог после успешного создания
                 welcome_dialog.accept()
-                
+
                 logger.info("Новый проект создан и отображён в главном окне")
-                
+
             except Exception as e:
                 logger.error(f"Ошибка создания проекта: {e}", exc_info=True)
                 QMessageBox.critical(
@@ -233,54 +239,39 @@ def main():
                     "Ошибка создания проекта",
                     f"Не удалось создать проект:\n{str(e)}"
                 )
-        
+
         def open_existing_project():
             """Открытие существующего проекта"""
             nonlocal main_window
-            # Используем getExistingDirectory для выбора папки .gad
-            # Так как проект - это директория с расширением .gad
-            dir_path = QFileDialog.getExistingDirectory(
-                welcome_dialog,  # Передаём parent для правильного модального поведения
-                "Открыть проект (выберите папку .gad)",
-                str(Path.home()),
-                QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
-            )
-            
-            # Если пользователь отменил выбор (нажал Cancel или закрыл диалог) - ничего не делаем
-            # Оставляем приветственный диалог открытым
-            if not dir_path:
-                return
-            
-            project_path = Path(dir_path)
-            # Проверяем, что выбранная директория имеет расширение .gad или содержит project.gadproj
-            if not (project_path.suffix == '.gad' or (project_path / 'project.gadproj').exists()):
-                QMessageBox.warning(
-                    welcome_dialog,
-                    "Неверный формат проекта",
-                    "Выбранная папка не является проектом P-of-Geo-Meas.\n"
-                    "Проект должен быть папкой с расширением .gad и содержать файл project.gadproj."
-                )
-                return
-            
+            logger.info("Открытие существующего проекта")
+
             try:
-                project = project_manager.open_project(project_path)
-                
-                # Создание главного окна с проектом
-                config = MainWindowConfig(
-                    interface_type=InterfaceType.RIBBON,
-                    window_title=f"P-of-Geo-Meas • Проект: {project.name}",
-                    window_size=(1600, 900),
-                    window_state="maximized",
-                    theme="light"
-                )
-                main_window = MainWindow(config)
-                main_window.current_project = project
-                
-                # Закрываем приветственный диалог после успешного открытия
-                welcome_dialog.accept()
-                
-                logger.info(f"Проект открыт: {dir_path}")
-                
+                file_path = QFileDialog.getOpenFileName(
+                    welcome_dialog,
+                    "Открыть проект",
+                    str(Path.home()),
+                    "Проекты GeoAdjust (*.gad);;Все файлы (*.*)"
+                )[0]
+
+                if file_path:
+                    project = project_manager.open_project(Path(file_path))
+
+                    # Создание главного окна с проектом
+                    config = MainWindowConfig(
+                        interface_type=InterfaceType.RIBBON,
+                        window_title=f"P-of-Geo-Meas • Проект: {project.name}",
+                        window_size=(1600, 900),
+                        window_state="maximized",
+                        theme="light"
+                    )
+                    main_window = MainWindow(config)
+                    main_window.current_project = project
+
+                    # Закрываем приветственный диалог после успешного открытия
+                    welcome_dialog.accept()
+
+                    logger.info(f"Проект '{project.name}' открыт и отображён в главном окне")
+
             except Exception as e:
                 logger.error(f"Ошибка открытия проекта: {e}", exc_info=True)
                 QMessageBox.critical(
@@ -288,67 +279,39 @@ def main():
                     "Ошибка открытия проекта",
                     f"Не удалось открыть проект:\n{str(e)}"
                 )
-        
-        def open_recent_project(project_path):
-            """Открытие недавнего проекта"""
-            nonlocal main_window
-            try:
-                project = project_manager.open_project(Path(project_path))
-                
-                # Создание главного окна с проектом
-                config = MainWindowConfig(
-                    interface_type=InterfaceType.RIBBON,
-                    window_title=f"P-of-Geo-Meas • Проект: {project.name}",
-                    window_size=(1600, 900),
-                    window_state="maximized",
-                    theme="light"
-                )
-                main_window = MainWindow(config)
-                main_window.current_project = project
-                
-                # Закрываем приветственный диалог после успешного открытия
-                welcome_dialog.accept()
-                
-                logger.info(f"Недавний проект открыт: {project_path}")
-                
-            except Exception as e:
-                logger.error(f"Ошибка открытия недавнего проекта: {e}", exc_info=True)
-                QMessageBox.critical(
-                    welcome_dialog,
-                    "Ошибка открытия проекта",
-                    f"Не удалось открыть проект:\n{str(e)}"
-                )
-        
-        # Подключение сигналов
+
+        # Подключение обработчиков сигналов
         welcome_dialog.new_project_requested.connect(create_new_project)
         welcome_dialog.open_project_requested.connect(open_existing_project)
-        welcome_dialog.recent_project_requested.connect(open_recent_project)
-        
-        # Отображение приветственного диалога
-        logger.info("Отображение приветственного диалога")
+
+        # Показ приветственного диалога
         result = welcome_dialog.exec_()
-        
-        # Если диалог закрыт без выбора действия - выйти
-        if result == QDialog.Rejected or main_window is None:
-            logger.info("Приложение закрыто пользователем из приветственного диалога")
-            print("=" * 60)
-            print("Приложение закрыто")
-            print("=" * 60)
+
+        if result == QDialog.Accepted:
+            # Диалог был принят - проект создан или открыт
+            pass
+        elif result == QDialog.Rejected:
+            # Диалог был отклонен - выход из программы
+            logger.info("Приветственный диалог отменен пользователем")
             sys.exit(0)
-        
-        # Показываем главное окно после закрытия приветственного диалога
+        else:
+            # Неожиданный результат
+            logger.warning(f"Неожиданный результат приветственного диалога: {result}")
+            sys.exit(1)
+
+        # Запуск главного цикла приложения
         if main_window:
             main_window.show()
             main_window.raise_()  # Поднимаем окно поверх других
             main_window.activateWindow()  # Активируем окно
-        
+
         # Запуск главного цикла приложения
         logger.info("Запуск главного цикла приложения Qt")
         print("=" * 60)
         print("+ ПРИЛОЖЕНИЕ УСПЕШНО ЗАПУЩЕНО!")
         print("=" * 60)
         exit_code = app.exec_()
-        
+
         # Если произошла ошибка, оставляем консоль открытой для просмотра ошибки
         if exit_code != 0:
             print(f"\n- Приложение завершилось с кодом ошибки: {exit_code}")
@@ -357,9 +320,9 @@ def main():
                 input()
             except:
                 pass
-        
+
         sys.exit(exit_code)
-        
+
     except Exception as e:
         print(f"\n- Критическая ошибка: {e}")
         traceback.print_exc()

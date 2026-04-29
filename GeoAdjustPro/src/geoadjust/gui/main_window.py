@@ -534,7 +534,7 @@ class MainWindow(QMainWindow):
         self.left_panel_dock.setVisible(True)
         self.left_panel_dock.visibilityChanged.connect(self._on_left_panel_dock_visibility_changed)
 
-        # Подключаем сигналы от левой панели
+        # Подключаем сигналы от левой панели (с защитой от рекурсии)
         self.left_panel.station_selected.connect(self._on_station_selected_from_panel)
         self.left_panel.course_selected.connect(self._on_course_selected_from_panel)
 
@@ -618,8 +618,12 @@ class MainWindow(QMainWindow):
         converted_observations = []
 
         for obs in observations:
-            # Проверяем, является ли измерение CombinedObservation (судим по наличию специфичных полей)
-            if isinstance(obs, dict) and 'horizontal_angle' in obs and 'zenith_angle' in obs and 'slope_distance' in obs:
+            # Проверяем, является ли измерение CombinedObservation объектом
+            if isinstance(obs, CombinedObservation):
+                # Уже CombinedObservation объект, оставляем как есть
+                converted_observations.append(obs)
+            # Проверяем, является ли измерение словарем CombinedObservation (судим по наличию специфичных полей)
+            elif isinstance(obs, dict) and 'horizontal_angle' in obs and 'zenith_angle' in obs and 'slope_distance' in obs:
                 # Это CombinedObservation, конвертируем обратно в объект
                 combined_obs = CombinedObservation(
                     obs_id=obs.get('obs_id', ''),
@@ -1519,89 +1523,167 @@ class MainWindow(QMainWindow):
 
     def _process_imported_data(self, imported_data):
         """Обработка импортированных данных"""
-        try:
-            # Проверяем, что проект существует
-            if not self.current_project:
-                return
+        logger.info(f"_process_imported_data: processing imported data with keys: {list(imported_data.keys())}")
+        # Проверяем, что проект существует
+        if not self.current_project:
+            logger.warning("_process_imported_data: no current project")
+            return
 
-            # Добавление данных в проект
-            points = imported_data.get('points', [])
-            observations = imported_data.get('observations', [])
+        # Добавление данных в проект
+        points = imported_data.get('points', [])
+        observations = imported_data.get('observations', [])
+        logger.info(f"_process_imported_data: found {len(points)} points, {len(observations)} observations")
 
-            # Обновление проекта
-            if points:
-                for point in points:
-                    self.current_project.add_point(point)
+        # Обновление проекта
+        if points:
+            for point in points:
+                self.current_project.add_point(point)
+            logger.info(f"_process_imported_data: added {len(points)} points to project")
 
-            if observations:
-                for obs in observations:
-                    # Конвертируем объект Observation в словарь
-                    try:
-                        # Для dataclass используем asdict
-                        from dataclasses import asdict
-                        obs_dict = asdict(obs)
-                    except (TypeError, ImportError):
-                        # Для обычных объектов используем vars или __dict__
-                        if hasattr(obs, '__dict__'):
-                            obs_dict = vars(obs)
-                        elif hasattr(obs, '__annotations__'):
-                            obs_dict = {k: getattr(obs, k) for k in obs.__annotations__}
-                        else:
-                            obs_dict = dict(obs) if hasattr(obs, 'keys') else obs
+        if observations:
+            for obs in observations:
+                # Конвертируем объект Observation в словарь
+                try:
+                    # Для dataclass используем asdict
+                    from dataclasses import asdict
+                    obs_dict = asdict(obs)
+                except (TypeError, ImportError):
+                    # Для обычных объектов используем vars или __dict__
+                    if hasattr(obs, '__dict__'):
+                        obs_dict = vars(obs)
+                    elif hasattr(obs, '__annotations__'):
+                        obs_dict = {k: getattr(obs, k) for k in obs.__annotations__}
+                    else:
+                        obs_dict = dict(obs) if hasattr(obs, 'keys') else obs
 
-                    self.current_project.add_observation(obs_dict)
+                self.current_project.add_observation(obs_dict)
+            logger.info(f"_process_imported_data: added {len(observations)} observations to project")
 
-            # Обновление интерфейса
-            self._refresh_data_views()
+        # Обновление интерфейса
+        self._refresh_data_views()
 
-            # Обновление станций, если есть данные о сессиях
-            station_sessions = imported_data.get('station_sessions', [])
-            if not station_sessions and imported_data.get('format') == 'SDR':
-                # Для SDR создать station_sessions из setups
-                setups = imported_data.get('setups', [])
-                station_sessions = []
-                for setup in setups:
-                    session = {
-                        'session_id': getattr(setup, 'setup_id', f"SETUP_{len(station_sessions)}"),
-                        'station_name': getattr(setup, 'station_name', 'UNKNOWN'),
-                        'instrument_height': getattr(setup, 'instrument_height', None),
-                        'temperature': getattr(setup, 'temperature', None),
-                        'pressure': getattr(setup, 'pressure', None),
-                        'num_observations': len([obs for obs in observations if getattr(obs, 'setup_id', None) == getattr(setup, 'setup_id', None)])
-                    }
-                    station_sessions.append(session)
-                imported_data['station_sessions'] = station_sessions
+        # Обновление станций, если есть данные о сессиях
+        station_sessions = imported_data.get('station_sessions', [])
+        if not station_sessions and imported_data.get('format') == 'SDR':
+            # Для SDR создать station_sessions из setups
+            setups = imported_data.get('setups', [])
+            station_sessions = []
+            for setup in setups:
+                session = {
+                    'session_id': getattr(setup, 'setup_id', f"SETUP_{len(station_sessions)}"),
+                    'station_name': getattr(setup, 'station_name', 'UNKNOWN'),
+                    'instrument_height': getattr(setup, 'instrument_height', None),
+                    'temperature': getattr(setup, 'temperature', None),
+                    'pressure': getattr(setup, 'pressure', None),
+                    'num_observations': len([obs for obs in observations if getattr(obs, 'setup_id', None) == getattr(setup, 'setup_id', None)])
+                }
+                station_sessions.append(session)
+            imported_data['station_sessions'] = station_sessions
 
-            if station_sessions and hasattr(self, '_update_stations_view'):
-                self._update_stations_view(station_sessions)
+        if station_sessions:
+            self._update_stations_view(station_sessions)
 
-            # Обновление ходов, если есть данные о ходах
-            leveling_courses = imported_data.get('leveling_courses', [])
-            if leveling_courses:
-                # Конвертируем измерения ходов в словари
-                converted_courses = []
-                for course in leveling_courses:
-                    converted_course = {
-                        'course_id': course['course_id'],
-                        'section_number': course.get('section_number', 1),
-                        'stations': course.get('stations', []),
-                        'measurements': course.get('measurements', [])
-                    }
-                    converted_courses.append(converted_course)
+        # Обновление ходов, если есть данные о ходах
+        leveling_courses = imported_data.get('leveling_courses', [])
+        if leveling_courses:
+            # Конвертируем измерения ходов в словари
+            converted_courses = []
+            for course in leveling_courses:
+                converted_course = {
+                    'course_id': course['course_id'],
+                    'section_number': course.get('section_number', 1),
+                    'stations': course.get('stations', []),
+                    'measurements': course.get('measurements', [])
+                }
+                converted_courses.append(converted_course)
 
-                self.leveling_courses = converted_courses
-                self.left_panel.update_courses(converted_courses)
+            self.leveling_courses = converted_courses
+            # self.left_panel.update_courses(converted_courses)
 
-                # Добавляем leveling_courses в preprocessing_result для отображения в дереве
-                if not hasattr(self.current_project, 'preprocessing_result') or self.current_project.preprocessing_result is None:
-                    self.current_project.preprocessing_result = {}
-                if 'traverses' not in self.current_project.preprocessing_result:
-                    self.current_project.preprocessing_result['traverses'] = {}
-                self.current_project.preprocessing_result['traverses']['sections'] = converted_courses
+            # Добавляем leveling_courses в preprocessing_result для отображения в дереве
+            if not hasattr(self.current_project, 'preprocessing_result') or self.current_project.preprocessing_result is None:
+                self.current_project.preprocessing_result = {}
+            if 'traverses' not in self.current_project.preprocessing_result:
+                self.current_project.preprocessing_result['traverses'] = {}
+            self.current_project.preprocessing_result['traverses']['sections'] = converted_courses
 
-                # Обновляем дерево ходов
-                if hasattr(self, '_update_traverses_tree'):
-                    self._update_traverses_tree()
+            # Сохраняем traverses для диалогов
+            self.current_project.traverses = imported_data.get('traverses', [])
+
+            # Обновляем дерево ходов
+            if hasattr(self, '_update_traverses_tree'):
+                self._update_traverses_tree()
+
+        # Обновление интерфейса
+        self._refresh_data_views()
+
+        # Обновление станций в левой панели
+        if station_sessions:
+            if hasattr(self.left_panel, 'update_stations'):
+                self.left_panel.update_stations(station_sessions)
+
+        logger.info(f"Импортировано: {len(points)} пунктов, {len(observations)} измерений")
+        self.statusBar().showMessage(
+            f"Импортировано: {len(points)} пунктов, {len(observations)} измерений",
+            5000
+        )
+
+    def _update_stations_view(self, station_sessions):
+        """Обновление представления станций"""
+        if hasattr(self, 'stations_content') and station_sessions:
+            self.stations_content.set_station_sessions(station_sessions)
+            logger.info(f"Обновлено представление станций: {len(station_sessions)} сессий")
+
+    def _update_traverses_tree(self):
+        """Обновление дерева ходов и секций"""
+        if not hasattr(self, 'traverses_tree') or not self.current_project:
+            return
+
+        tree = self.traverses_tree
+        tree.clear()
+
+        preprocessing_result = getattr(self.current_project, 'preprocessing_result', None)
+        if not preprocessing_result:
+            tree.addTopLevelItem(QTreeWidgetItem(["Нет данных для отображения"]))
+            return
+
+        traverses_data = preprocessing_result.get('traverses', {})
+        sections = traverses_data.get('sections', [])
+        traverses = traverses_data.get('traverses', [])
+
+        logger.info(f"_update_traverses_tree: found {len(sections)} sections, {len(traverses)} traverses")
+
+        if sections:
+            level_item = QTreeWidgetItem(["Нивелирные ходы"])
+            for section in sections:
+                if not isinstance(section, dict):
+                    continue
+                stations = section.get('stations', [])
+                measurements = section.get('measurements', [])
+                course_id = section.get('course_id', f'COURSE_{len(sections)}')
+                section_item = QTreeWidgetItem([f"{course_id}: {len(stations)} ст., {len(measurements)} измерений"])
+                for station in stations:
+                    station_item = QTreeWidgetItem([f"Станция: {station}"])
+                    section_item.addChild(station_item)
+                level_item.addChild(section_item)
+            if level_item.childCount():
+                tree.addTopLevelItem(level_item)
+                level_item.setExpanded(True)
+
+        if traverses:
+            taheo_item = QTreeWidgetItem(["Тахеометрические ходы"])
+            for traverse in traverses:
+                if not isinstance(traverse, dict):
+                    continue
+                stations = traverse.get('stations', [])
+                traverse_item = QTreeWidgetItem([f"Ход: {len(stations)} ст."])
+                taheo_item.addChild(traverse_item)
+            if taheo_item.childCount():
+                tree.addTopLevelItem(taheo_item)
+                taheo_item.setExpanded(True)
+
+        if not sections and not traverses:
+            tree.addTopLevelItem(QTreeWidgetItem(["Нет ходов для отображения"]))
 
             # Обновление левой панели после импорта
             self._refresh_data_views()
@@ -1616,10 +1698,6 @@ class MainWindow(QMainWindow):
                 f"Импортировано: {len(points)} пунктов, {len(observations)} измерений",
                 5000
             )
-                
-        except Exception as e:
-            logger.error(f"ОШИБКА при импорте файла: {e}", exc_info=True)
-            QMessageBox.critical(self, "Ошибка", f"Ошибка при импорте:\n{str(e)}")
     
     def _export_file(self):
         """Экспорт данных в файл"""
@@ -1858,11 +1936,16 @@ class MainWindow(QMainWindow):
 
             # Обновление таблицы измерений
             observations = self.current_project.get_observations()
-            logger.info(f"_refresh_data_views: got {len(observations)} observations from project")
             if observations and hasattr(self, 'observations_table'):
                 # Конвертируем словари обратно в объекты CombinedObservation
                 converted_observations = self._convert_observations_to_objects(observations)
                 self.observations_table.update_data(converted_observations)
+
+            # Обновление станций
+            if hasattr(self.left_panel, 'update_stations'):
+                # Получаем station_sessions из проекта, если они есть
+                # Пока оставим пустым, так как stations_sessions не хранятся в проекте постоянно
+                pass
     
     def _check_tolerances(self):
         """Контроль допусков"""
@@ -2500,7 +2583,8 @@ class MainWindow(QMainWindow):
     def _on_left_panel_dock_visibility_changed(self, visible: bool):
         """Обработка изменения видимости левой панели"""
         if hasattr(self, 'left_panel_dock_action'):
-            self.left_panel_dock_action.setChecked(visible)
+            # self.left_panel_dock_action.setChecked(visible)
+            pass
 
     def _on_observations_dock_visibility_changed(self, visible: bool):
         """Обработка изменения видимости панели измерений"""
@@ -2519,69 +2603,63 @@ class MainWindow(QMainWindow):
 
     def _on_station_selected_from_panel(self, station_id: str):
         """Обработка выбора станции из левой панели"""
-        # Фильтруем измерения по станции
-        if hasattr(self, 'observations_table'):
-            self.observations_table.filter_by_station_session(station_id or None)
+        # Защита от рекурсии
+        if hasattr(self, '_filtering_in_progress') and self._filtering_in_progress:
+            return
+
+        self._filtering_in_progress = True
+
+        try:
+            # Фильтруем измерения по станции
+            if hasattr(self, 'observations_table'):
+                self.observations_table.filter_by_station_session(station_id or None)
+
+                # Переключаемся на вкладку тахеометрии, если фильтр применен
+                if station_id and hasattr(self.observations_table, 'tabs'):
+                    for i in range(self.observations_table.tabs.count()):
+                        tab_text = self.observations_table.tabs.tabText(i)
+                        if "тахеометр" in tab_text.lower():
+                            self.observations_table.tabs.setCurrentIndex(i)
+                            break
+        finally:
+            self._filtering_in_progress = False
 
     def _on_course_selected_from_panel(self, course_id: str):
-        """Обработка выбора хода из левой панели"""
-        # Если выбрано "Все ходы" или сброс, показываем все измерения
+        """Обработка выбора хода из левой панели - открываем диалог измерений"""
         if course_id == "ALL_COURSES" or course_id is None:
             if hasattr(self, 'observations_table'):
                 self._refresh_data_views()
             self.statusBar().showMessage("Показаны все измерения", 3000)
             return
 
-        # Найдем измерения для выбранного хода
-        course_measurements = []
+        # Найдем данные хода
+        selected_course = None
         if hasattr(self, 'leveling_courses') and self.leveling_courses:
             for course in self.leveling_courses:
                 if course.get('course_id') == course_id:
-                    course_measurements = course.get('measurements', [])
+                    selected_course = course
                     break
 
-        # Фильтруем наблюдения по измерениям хода
-        if course_measurements and self.current_project:
-            # Получаем все наблюдения
-            all_observations = self.current_project.get_observations()
+        if selected_course:
+            # Найдем Traverse объект
+            selected_traverse = None
+            if hasattr(self, 'current_project') and self.current_project:
+                traverses = getattr(self.current_project, 'traverses', [])
+                for traverse in traverses:
+                    if traverse.name == selected_course.get('course_id'):
+                        selected_traverse = traverse
+                        break
 
-            # Создаем маппинг измерений хода для быстрого поиска
-            course_obs_ids = set()
-            for meas in course_measurements:
-                # Создаем идентификатор на основе from_point и to_point
-                if isinstance(meas, dict):
-                    obs_key = f"{meas.get('from_point', '')}_{meas.get('to_point', '')}"
-                else:
-                    obs_key = f"{getattr(meas, 'from_point', '')}_{getattr(meas, 'to_point', '')}"
-                course_obs_ids.add(obs_key)
-
-            # Фильтруем наблюдения
-            filtered_observations = []
-            for obs in all_observations:
-                if isinstance(obs, dict):
-                    obs_key = f"{obs.get('from_point', '')}_{obs.get('to_point', '')}"
-                    obs_type = obs.get('obs_type', '')
-                else:
-                    obs_key = f"{getattr(obs, 'from_point', '')}_{getattr(obs, 'to_point', '')}"
-                    obs_type = getattr(obs, 'obs_type', '')
-
-                if obs_key in course_obs_ids and obs_type == 'leveling_height_diff':
-                    filtered_observations.append(obs)
-
-            # Обновляем таблицу измерений только с измерениями выбранного хода
-            if hasattr(self, 'observations_table'):
-                converted_filtered = self._convert_observations_to_objects(filtered_observations)
-                self.observations_table.set_observations(converted_filtered)
-
-                # Автоматически переключаемся на вкладку нивелирования
-                if hasattr(self.observations_table, 'tabs'):
-                    for i in range(self.observations_table.tabs.count()):
-                        tab_text = self.observations_table.tabs.tabText(i)
-                        if "нивелир" in tab_text.lower():
-                            self.observations_table.tabs.setCurrentIndex(i)
-                            break
-
-        self.statusBar().showMessage(f"Показаны измерения хода {course_id}", 3000)
+            # Открываем диалог измерений
+            from .dialogs.measurements_dialog import MeasurementsDialog
+            if selected_traverse:
+                dialog = MeasurementsDialog(selected_traverse, self)
+            else:
+                # Fallback to dict
+                dialog = MeasurementsDialog(selected_course, self)
+            dialog.exec_()
+        else:
+            self.statusBar().showMessage(f"Ход {course_id} не найден", 3000)
     
     def _restore_all_panels(self):
         """Восстановить все панели"""

@@ -12,6 +12,44 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class GSIRecord:
+    """Запись измерения GSI"""
+    point_id: str
+    section_id: int
+    reading_type: str  # 'нет', 'задняя', 'передняя', 'промежуточный'
+    rod_reading: float  # отсчёт по рейке (м)
+    distance: float     # расстояние (м)
+    angle: float        # горизонтальный угол (град)
+    dh: float           # превышение (м)
+
+@dataclass
+class TraversePointData:
+    """Данные точки в ходе"""
+    point_name: str
+    section_num: int
+    dh: float
+    length_km: float
+    setups: int
+
+@dataclass
+class SidePoint:
+    """Боковая точка"""
+    point_name: str
+    rod_reading: float
+    distance: float
+    # остальные поля опционально
+
+@dataclass
+class Traverse:
+    """Нивелирный ход"""
+    name: str
+    points_list: List[str]
+    class_leveling: str = 'IV класс'
+    records: List[GSIRecord] = field(default_factory=list)
+    traverse_points: List[TraversePointData] = field(default_factory=list)
+    side_points: List[SidePoint] = field(default_factory=list)
+
 
 class CirclePosition(Enum):
     """Положение вертикального круга"""
@@ -56,6 +94,7 @@ class GSIObservation:
     pressure: Optional[float] = None
     line_number: int = 0
     raw_words: List[GSIWord] = field(default_factory=list)
+    reading_type: str = ""  # тип отсчёта: 'нет', 'задняя', 'передняя', 'промежуточный'
 
 
 @dataclass
@@ -344,14 +383,14 @@ class GSIParser:
         points = []
         observations = []
         station_sessions = []
-        leveling_courses = []
+        traverses = []
 
         with open(file_path, 'r', encoding=self.encoding, errors='ignore') as f:
             lines = f.readlines()
         logger.info(f"Read {len(lines)} lines from {file_path}")
 
         current_station = None
-        current_course = None
+        current_traverse = None
         current_section = None
         self._station_counter = 0
 
@@ -482,19 +521,19 @@ class GSIParser:
                     except:
                         section_num = 1
 
-                    if current_course:
+                    if current_traverse:
                         # Завершаем предыдущий ход
-                        leveling_courses.append(current_course)
+                        traverses.append(current_traverse)
 
                     # Начинаем новый ход
-                    current_course = {
-                        'course_id': f"COURSE_{len(leveling_courses) + 1:03d}",
-                        'section_number': section_num,
-                        'stations': [],
-                        'measurements': []
-                    }
+                    traverse_name = f"{file_path.stem} - {section_num}"
+                    current_traverse = Traverse(
+                        name=traverse_name,
+                        points_list=[],
+                        records=[]
+                    )
                     current_section = section_num
-                    logger.debug(f"Started course {current_course['course_id']} at line {line_num}")
+                    logger.debug(f"Started traverse {current_traverse.name} at line {line_num}")
                     continue
 
                 # Обрабатываем станции
@@ -502,8 +541,8 @@ class GSIParser:
                     current_station = station_from_line
 
                     # Добавляем станцию в текущий ход
-                    if current_course and current_station not in current_course['stations']:
-                        current_course['stations'].append(current_station)
+                    if current_traverse and current_station not in current_traverse.points_list:
+                        current_traverse.points_list.append(current_station)
 
                     # Добавляем станцию в список точек
                     if current_station not in point_dict:
@@ -523,8 +562,8 @@ class GSIParser:
                         target_name = target_word.identifier.strip()
                         if target_name:
                             # Добавляем цель в текущий ход
-                            if current_course and target_name not in current_course['stations']:
-                                current_course['stations'].append(target_name)
+                            if current_traverse and target_name not in current_traverse.points_list:
+                                current_traverse.points_list.append(target_name)
 
                             # Добавляем цель в список точек
                             if target_name not in point_dict:
@@ -540,24 +579,29 @@ class GSIParser:
                     leveling_words = [w for w in parsed_words if w.number in [571, 572, 573, 574]]
                     if leveling_words and current_station:
                         # Создаем измерение превышения
-                        self._process_leveling_measurement(parsed_words, line_num, observations, station_sessions, current_station, current_course)
+                        logger.info(f"Processing leveling measurement on line {line_num}, station {current_station}")
+                        self._process_leveling_measurement(parsed_words, line_num, observations, station_sessions, current_station, current_traverse)
 
                     # Проверяем на промежуточные измерения (333, 335, 336)
                     intermediate_words = [w for w in parsed_words if w.number in [333, 335, 336]]
                     if intermediate_words:
                         # Создаем боковое измерение
+                        logger.info(f"Processing intermediate measurement on line {line_num}, station {current_station}")
                         self._process_intermediate_measurement(parsed_words, line_num, observations, station_sessions, current_station, current_course)
 
                     # Обрабатываем тахеометрические измерения (направления, расстояния)
-                    self._process_tacheometric_measurements(parsed_words, line_num, observations, station_sessions, current_station)
+                    codes = {word.number for word in parsed_words}
+                    if any(word.number in [32, 33, 331, 332, 334, 335, 336] for word in parsed_words):
+                        logger.info(f"Processing tacheometric measurement on line {line_num}, station {current_station}, codes {codes}")
+                        self._process_tacheometric_measurements(parsed_words, line_num, observations, station_sessions, current_station)
 
             except Exception as e:
                 logger.debug(f"Ошибка парсинга строки {line_num}: {e}")
                 continue
 
         # Завершаем последний ход
-        if current_course:
-            leveling_courses.append(current_course)
+        if current_traverse:
+            traverses.append(current_traverse)
 
         # Конвертируем словарь точек в список
         points = list(point_dict.values())
@@ -569,11 +613,12 @@ class GSIParser:
         leveling_measurements = len([obs for obs in observations if hasattr(obs, 'obs_type') and obs.obs_type == 'leveling_height_diff'])
         intermediate_measurements = len([obs for obs in observations if hasattr(obs, 'obs_type') and obs.obs_type == 'intermediate_leveling'])
 
+        logger.info(f"GSI parser completed: {len(points)} points, {len(observations)} observations, {len(traverses)} traverses")
         return {
             'points': points,
             'observations': observations,
             'station_sessions': station_sessions,
-            'leveling_courses': leveling_courses,
+            'traverses': traverses,
             'format': 'GSI',
             'version': self.version,
             'encoding': self.encoding,
@@ -582,11 +627,25 @@ class GSIParser:
             'num_leveling_observations': leveling_measurements,
             'num_intermediate_observations': intermediate_measurements,
             'num_points': len(points),
-            'num_courses': len(leveling_courses),
+            'num_traverses': len(traverses),
             'success': len(observations) > 0,
             'errors': [],
             'warnings': []
         }
+
+    def _classify_reading_type(self, words):
+        """Классификация типа отсчёта по кодам в строке"""
+        codes = {word.number for word in words}
+
+        if 333 in codes and not any(c in codes for c in [573, 574]):
+            return 'промежуточный отсчёт'
+        elif any(c in codes for c in [331, 335]):
+            return 'задняя точка'
+        elif any(c in codes for c in [332, 336]):
+            return 'передняя точка'
+        elif any(c in codes for c in [83]) and not any(c in codes for c in [331, 332, 333]):
+            return 'нет отсчёта'
+        return 'неопределено'
 
     def _process_leveling_measurement(self, words, line_num, observations, station_sessions, current_station, current_course):
         """Обработка нивелирного измерения превышения"""
@@ -598,7 +657,7 @@ class GSIParser:
         for word in words:
             if word.number in [573, 574]:  # Превышение
                 height_diff_word = word
-            elif word.number == 574:  # Расстояние
+            elif word.number == 574:  # Расстояние для 574
                 distance = word.value
             elif word.number in [83, 87]:  # Высота инструмента
                 instrument_height = word.value
@@ -628,6 +687,8 @@ class GSIParser:
             station_sessions.append(session)
             self._station_counter += 1
 
+        reading_type = self._classify_reading_type(words)
+
         # Создаем измерение превышения
         obs = GSIObservation(
             obs_type='leveling_height_diff',
@@ -637,20 +698,24 @@ class GSIParser:
             station_session_id=session_id,
             instrument_height=instrument_height,
             line_number=line_num,
-            raw_words=words
+            raw_words=words,
+            reading_type=reading_type
         )
         observations.append(obs)
         session.observations.append(obs)
 
-        # Добавляем в ход
-        if current_course:
-            current_course['measurements'].append({
-                'from_point': current_station,
-                'to_point': target_name,
-                'value': height_diff_word.value,
-                'distance': distance,
-                'type': 'leveling_height_diff'
-            })
+        # Создаем GSIRecord
+        if current_traverse:
+            record = GSIRecord(
+                point_id=target_name,
+                section_id=current_section or 1,
+                reading_type=reading_type,
+                rod_reading=instrument_height or 0,
+                distance=distance or 0,
+                angle=0,  # для leveling
+                dh=height_diff_word.value
+            )
+            current_traverse.records.append(record)
 
     def _process_intermediate_measurement(self, words, line_num, observations, station_sessions, current_station, current_course):
         """Обработка промежуточного (бокового) измерения"""
@@ -679,9 +744,19 @@ class GSIParser:
             station_session_id=f"SESSION_{self._station_counter}",
             instrument_height=instrument_height,
             line_number=line_num,
-            raw_words=words
+            raw_words=words,
+            reading_type='промежуточный отсчёт'
         )
         observations.append(obs)
+
+        # Создаем SidePoint
+        if current_traverse:
+            side_point = SidePoint(
+                point_name=target_name,
+                rod_reading=instrument_height or 0,
+                distance=distance_word.value
+            )
+            current_traverse.side_points.append(side_point)
 
     def _process_tacheometric_measurements(self, words, line_num, observations, station_sessions, current_station):
         """Обработка тахеометрических измерений (направления, расстояния, углы)"""
@@ -728,8 +803,12 @@ class GSIParser:
             station_sessions.append(session)
             self._station_counter += 1
 
+        # Если target_name не найден, используем placeholder
+        if not target_name:
+            target_name = f"TARGET_{line_num}"
+
         # Создаем измерения для каждого типа
-        if direction_word and target_name:
+        if direction_word:
             obs = GSIObservation(
                 obs_type='direction',
                 from_point=current_station,
@@ -739,12 +818,14 @@ class GSIParser:
                 instrument_height=instrument_height,
                 target_height=target_height,
                 line_number=line_num,
-                raw_words=words
+                raw_words=words,
+                reading_type='промежуточный'  # для тахеометрии
             )
             observations.append(obs)
             session.observations.append(obs)
+            logger.debug(f"Created direction observation: from {current_station} to {target_name}, value {direction_word.value}")
 
-        if horizontal_distance_word and target_name:
+        if horizontal_distance_word:
             obs = GSIObservation(
                 obs_type='horizontal_distance',
                 from_point=current_station,
@@ -752,12 +833,13 @@ class GSIParser:
                 value=horizontal_distance_word.value,
                 station_session_id=session_id,
                 line_number=line_num,
-                raw_words=words
+                raw_words=words,
+                reading_type='промежуточный'
             )
             observations.append(obs)
             session.observations.append(obs)
 
-        if slope_distance_word and target_name:
+        if slope_distance_word:
             obs = GSIObservation(
                 obs_type='slope_distance',
                 from_point=current_station,
@@ -765,12 +847,13 @@ class GSIParser:
                 value=slope_distance_word.value,
                 station_session_id=session_id,
                 line_number=line_num,
-                raw_words=words
+                raw_words=words,
+                reading_type='промежуточный'
             )
             observations.append(obs)
             session.observations.append(obs)
 
-        if zenith_angle_word and target_name:
+        if zenith_angle_word:
             obs = GSIObservation(
                 obs_type='zenith_angle',
                 from_point=current_station,
@@ -780,7 +863,8 @@ class GSIParser:
                 instrument_height=instrument_height,
                 target_height=target_height,
                 line_number=line_num,
-                raw_words=words
+                raw_words=words,
+                reading_type='промежуточный'
             )
             observations.append(obs)
             session.observations.append(obs)

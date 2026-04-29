@@ -26,17 +26,18 @@ class StationsTableWidget(QTableWidget):
 
         self.setSelectionBehavior(QTableWidget.SelectRows)
         self.setAlternatingRowColors(True)
-        self.setSortingEnabled(True)
+        # Сортировка отключена для избежания проблем
+        # self.setSortingEnabled(True)
 
         self.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
-        self.horizontalHeader().customContextMenuRequested.connect(self._show_header_context_menu)
+        # Контекстное меню отключено
+        # self.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
+        # self.horizontalHeader().customContextMenuRequested.connect(self._show_header_context_menu)
         self.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
 
-        # Используем itemClicked вместо itemSelectionChanged для избежания проблем
         self.itemClicked.connect(self._on_item_clicked)
 
         self._sessions_data = []
@@ -61,7 +62,7 @@ class StationsTableWidget(QTableWidget):
 
     def set_station_sessions(self, sessions: List[Dict[str, Any]]):
         """Установка данных о сессиях станций"""
-        print(f"StationsTableWidget.set_station_sessions called, self type: {type(self)}")
+
         self.clearContents()
         self._sessions_data = sessions
 
@@ -77,7 +78,7 @@ class StationsTableWidget(QTableWidget):
 
             # Станция
             station_item = QTableWidgetItem(station_name)
-            station_item.setData(Qt.UserRole, {'type': 'station', 'session_id': session_id})
+            station_item.setData(Qt.UserRole, {'type': 'station', 'session_id': session_id, 'station_name': station_name})
             station_item.setFlags(station_item.flags() & ~Qt.ItemIsEditable)
             font = station_item.font()
             font.setBold(True)
@@ -115,14 +116,14 @@ class StationsTableWidget(QTableWidget):
         """Обработка клика по элементу"""
         data = item.data(Qt.UserRole)
         if data and data.get('type') == 'station':
-            session_id = data.get('session_id', '')
-            self.station_selected.emit(session_id)
+            station_name = data.get('station_name', '')
+            self.station_selected.emit(station_name)
 
 
     
     def set_station_sessions(self, sessions: List[Dict[str, Any]]):
         """Установка данных о сессиях станций"""
-        print(f"StationsTableWidget.set_station_sessions called, self type: {type(self)}")
+
         self.clearContents()
         self._sessions_data = sessions
 
@@ -138,7 +139,7 @@ class StationsTableWidget(QTableWidget):
 
             # Станция
             station_item = QTableWidgetItem(station_name)
-            station_item.setData(Qt.UserRole, {'type': 'station', 'session_id': session_id})
+            station_item.setData(Qt.UserRole, {'type': 'station', 'session_id': session_id, 'station_name': station_name})
             station_item.setFlags(station_item.flags() & ~Qt.ItemIsEditable)
             font = station_item.font()
             font.setBold(True)

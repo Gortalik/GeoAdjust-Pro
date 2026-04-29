@@ -259,7 +259,7 @@ class SDRParser:
                 raw_line=obs.raw_line
             )
 
-            logger.debug(f"Created CombinedObservation: type={combined_obs.obs_type}, h_angle={combined_obs.horizontal_angle}, dist={combined_obs.slope_distance}")
+
             compatible_observations.append(combined_obs)
 
         # Формируем данные сессий станций для UI (формат, ожидаемый import_dialog)
@@ -585,9 +585,10 @@ class SDRParser:
 
                 if len(numbers) >= 3:
                     # Если нашли 3 или больше чисел, используем первые 3
-                    horizontal_angle = float(numbers[0])
+                    # Порядок в SDR: расстояние, вертикальный угол, горизонтальный угол
+                    slope_distance = float(numbers[0])
                     zenith_angle = float(numbers[1])
-                    slope_distance = float(numbers[2])
+                    horizontal_angle = float(numbers[2])
                 else:
                     # Если не нашли числа, попробуем разделить строку на части фиксированной длины
                     # Предполагаем, что каждое число имеет около 15-16 символов
@@ -599,9 +600,10 @@ class SDRParser:
                             z_str = numbers_str[part_len:2*part_len].strip()
                             d_str = numbers_str[2*part_len:].strip()
 
-                            horizontal_angle = float(h_str)
+                            # Порядок в SDR: расстояние, вертикальный угол, горизонтальный угол
+                            slope_distance = float(h_str)
                             zenith_angle = float(z_str)
-                            slope_distance = float(d_str)
+                            horizontal_angle = float(d_str)
                         except (ValueError, IndexError):
                             horizontal_angle = None
                             zenith_angle = None

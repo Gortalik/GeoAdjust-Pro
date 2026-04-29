@@ -285,7 +285,7 @@ class ObservationsTableModel(QAbstractTableModel):
     """Модель таблицы измерений с разделением по типам"""
     
     # Типы измерений для каждой вкладки
-    LEVELING_TYPES = ['height_diff', 'backsight', 'foresight', 'intermediate', 'leveling_height_diff', 'intermediate_leveling']
+    LEVELING_TYPES = ['height_diff', 'backsight', 'foresight', 'intermediate', 'leveling_height_diff']
     LEVELING_INTERMEDIATE_TYPES = ['intermediate_leveling']
     TOTAL_STATION_TYPES = ['direction', 'zenith_angle', 'vertical_angle', 'distance',
                           'slope_distance', 'horizontal_distance', 'combined']
@@ -323,10 +323,14 @@ class ObservationsTableModel(QAbstractTableModel):
         Args:
             tab: 'leveling', 'total_station', или 'gnss'
         """
+
         self._current_tab = tab
         self.beginResetModel()
         self._filter_observations()
         self.endResetModel()
+
+        # Обновление интерфейса убрано, чтобы избежать бесконечного цикла
+        # Qt автоматически обновит интерфейс при изменении модели
 
     def set_station_filter(self, station_filter: Optional[str]):
         """Установка фильтра по станции"""
@@ -335,6 +339,7 @@ class ObservationsTableModel(QAbstractTableModel):
 
     def _filter_observations(self):
         """Фильтрация измерений по текущей вкладке и станции"""
+        print(f"FILTER: tab={self._current_tab}, station_filter={self._station_filter}")
         # Сначала фильтруем по типу измерений
         if self._current_tab == 'leveling':
             filtered = [
@@ -359,6 +364,8 @@ class ObservationsTableModel(QAbstractTableModel):
         else:
             filtered = self._observations
 
+        print(f"FILTER: after type filter, {len(filtered)} observations")
+
         # Затем применяем фильтр по станции, если он установлен
         if self._station_filter:
             # Фильтруем по станции - показываем только измерения выбранной станции
@@ -367,26 +374,35 @@ class ObservationsTableModel(QAbstractTableModel):
                 from geoadjust.core.network.models import CombinedObservation
                 from geoadjust.io.formats.gsi import GSIObservation
                 if isinstance(obs, CombinedObservation):
-                    # Для SDR данных from_setup_id содержит ID станции
+                    # Для SDR данных from_setup_id содержит ID станции типа "STATION_SETUP_001"
                     obs_station = obs.from_setup_id
+                    # Извлекаем имя станции из setup_id (до "_SETUP_")
+                    if "_SETUP_" in obs_station:
+                        obs_station = obs_station.split("_SETUP_")[0]
                 elif isinstance(obs, GSIObservation):
                     obs_station = obs.station_session_id
                 elif isinstance(obs, dict):
                     obs_station = obs.get('from_setup_id', obs.get('station_session_id', ''))
+                    # Извлекаем имя станции из setup_id
+                    if "_SETUP_" in obs_station:
+                        obs_station = obs_station.split("_SETUP_")[0]
                 else:
                     obs_station = getattr(obs, 'from_setup_id', getattr(obs, 'station_session_id', ''))
 
-                # Проверяем точное совпадение session_id
-                if obs_station and obs_station == self._station_filter:
+                print(f"FILTER: checking obs_station={obs_station} vs filter={self._station_filter}")
+                if obs_station == self._station_filter:
                     filtered_results.append(obs)
 
             filtered = filtered_results
+            print(f"FILTER: after station filter, {len(filtered_results)} observations")
 
         # Для тахеометрии показываем каждую SDR строку как отдельную запись в хронологическом порядке
         if self._current_tab == 'total_station':
             self._filtered_observations = filtered  # Сохраняем порядок из файла
         else:
             self._filtered_observations = filtered
+
+        print(f"FILTER: final result, {len(self._filtered_observations)} observations in filtered")
 
         # Сохраняем оригинальный порядок для сброса сортировки
         self._original_filtered_observations = self._filtered_observations.copy()
@@ -488,13 +504,19 @@ class ObservationsTableModel(QAbstractTableModel):
         """Получение типа измерения из объекта или словаря"""
         from geoadjust.core.network.models import CombinedObservation
         if isinstance(obs, CombinedObservation):
+            print(f"GET_TYPE: CombinedObservation -> 'combined'")
             return 'combined'
         if isinstance(obs, dict):
             # Если dict имеет поля CombinedObservation, считать combined
             if 'horizontal_angle' in obs or 'zenith_angle' in obs or 'slope_distance' in obs:
+                print(f"GET_TYPE: dict with angles -> 'combined'")
                 return 'combined'
-            return obs.get('type', obs.get('obs_type', ''))
-        return getattr(obs, 'obs_type', '')
+            obs_type = obs.get('type', obs.get('obs_type', ''))
+            print(f"GET_TYPE: dict -> '{obs_type}'")
+            return obs_type
+        obs_type = getattr(obs, 'obs_type', '')
+        print(f"GET_TYPE: object -> '{obs_type}'")
+        return obs_type
     
     def _get_from_point(self, obs) -> str:
         """Получение начальной точки"""
@@ -800,6 +822,10 @@ class ObservationsTableModel(QAbstractTableModel):
         self.beginResetModel()
         self.endResetModel()
 
+    def _reset_sorting(self):
+        """Сброс сортировки к оригинальному порядку"""
+        self.sort(-1)
+
 
 class ObservationsTableView(QTableView):
     """Таблица измерений с вкладками по типам"""
@@ -889,7 +915,7 @@ class ObservationsTableView(QTableView):
         menu = QMenu(self)
 
         reset_sort_action = QAction("Сбросить сортировку", self)
-        reset_sort_action.triggered.connect(self._reset_sorting)
+        reset_sort_action.triggered.connect(self.model._reset_sorting)
 
         menu.addAction(reset_sort_action)
         menu.exec_(self.horizontalHeader().mapToGlobal(position))
@@ -972,6 +998,15 @@ class ObservationsTableWidget(QWidget):
     def set_observations(self, observations):
         """Установка списка измерений"""
         logger.info(f"ObservationsTable.set_observations: setting {len(observations)} observations")
+        print(f"SET_OBS: total observations = {len(observations)}")
+        if observations:
+            sample = observations[0]
+            print(f"SET_OBS: sample type = {type(sample)}")
+            if isinstance(sample, dict):
+                print(f"SET_OBS: sample keys = {list(sample.keys())}")
+                obs_type = self._get_obs_type(sample)
+                print(f"SET_OBS: sample obs_type = {obs_type}")
+
         self.leveling_model.set_observations(observations)
         self.leveling_intermediate_model.set_observations(observations)
         self.total_station_model.set_observations(observations)
@@ -1002,7 +1037,7 @@ class ObservationsTableWidget(QWidget):
         # Перефильтровываем данные с правильным обновлением модели
         self._refilter_table(self.leveling_model)
         self._refilter_table(self.total_station_model)
-        self._refilter_table(self.gnss_table.model)
+        self._refilter_table(self.gnss_model)
 
     def _refilter_table(self, model):
         """Перефильтрация данных в модели с правильным обновлением"""
