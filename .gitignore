@@ -1,35 +1,37 @@
 ```
-# Compiled Python files
-*.pyc
+# Python
 __pycache__/
-
-# Virtual environments
-venv/
-.venv/
-.env
-.env.local
-*.env.*
-
-# Build/dist directories
-dist/
-build/
-target/
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
+*.pyc
+*.pyo
+*.pyd
 
 # Logs
 *.log
 
-# Coverage reports
+# Output directories
+geoadjust_output/
+test_output/
+
+# Temporary and build files
+*.tmp
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.local
+*.env.*
+
+# Coverage
 .coverage
 coverage/
 htmlcov/
 
-# Python cache
-.mypy_cache/
-.pytest_cache/
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
 ```
