@@ -10,6 +10,7 @@ class NetworkPoint:
     x: float
     y: float
     h: Optional[float]
+    status: Literal['initial', 'working'] = 'working'  # Статус: исходный или рабочий
     sigma_x_apriori: float = 0.0
     sigma_y_apriori: float = 0.0
     sigma_h_apriori: float = 0.0

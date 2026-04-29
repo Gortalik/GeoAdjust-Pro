@@ -199,6 +199,8 @@ class GSIParser:
                             points[point_name] = {
                                 'point_id': point_name,
                                 'point_type': 'target',
+                                'coord_type': 'FREE',
+                                'status': 'working',
                                 'x': coords[0] if len(coords) > 0 else None,
                                 'y': coords[1] if len(coords) > 1 else None,
                                 'h': coords[2] if len(coords) > 2 else None
@@ -549,6 +551,8 @@ class GSIParser:
                         point_dict[current_station] = {
                             'point_id': current_station,
                             'point_type': 'station',
+                            'coord_type': 'FREE',  # По умолчанию свободный пункт
+                            'status': 'working',   # По умолчанию рабочий
                             'x': None,
                             'y': None,
                             'h': None
@@ -570,6 +574,8 @@ class GSIParser:
                                 point_dict[target_name] = {
                                     'point_id': target_name,
                                     'point_type': 'target',
+                                    'coord_type': 'FREE',  # По умолчанию свободный пункт
+                                    'status': 'working',   # По умолчанию рабочий
                                     'x': None,
                                     'y': None,
                                     'h': None

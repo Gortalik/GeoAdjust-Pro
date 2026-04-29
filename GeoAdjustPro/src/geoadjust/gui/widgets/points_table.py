@@ -47,6 +47,15 @@ class ManualPointInputDialog(QDialog):
                 self.type_combo.setCurrentIndex(idx)
         layout.addRow("Тип пункта:", self.type_combo)
         
+        # Статус пункта (исходный/рабочий)
+        self.status_combo = QComboBox()
+        self.status_combo.addItems(["working", "initial"])  # рабочий / исходный
+        if point_data:
+            idx = self.status_combo.findText(point_data.get('status', 'working'))
+            if idx >= 0:
+                self.status_combo.setCurrentIndex(idx)
+        layout.addRow("Статус пункта:", self.status_combo)
+        
         # Координата X
         self.x_edit = QLineEdit()
         if point_data:
@@ -89,6 +98,7 @@ class ManualPointInputDialog(QDialog):
             'id': self.id_edit.text().strip(),
             'name': self.name_edit.text().strip() or self.id_edit.text().strip(),
             'type': self.type_combo.currentText(),
+            'status': self.status_combo.currentText(),  # Добавлен статус
             'x': self.x_edit.text().strip(),
             'y': self.y_edit.text().strip(),
             'h': self.h_edit.text().strip(),
@@ -220,9 +230,9 @@ class PointsTableView(QTableView):
     
     def _setup_model(self):
         """Настройка модели данных"""
-        self.model = QStandardItemModel(0, 8, self)
+        self.model = QStandardItemModel(0, 9, self)  # Добавлена колонка для статуса
         self.model.setHorizontalHeaderLabels([
-            "ID", "Наименование", "Тип", "X (м)", "Y (м)",
+            "ID", "Наименование", "Тип", "Статус", "X (м)", "Y (м)",
             "H (м)", "Прибор", "Примечание"
         ])
         self.setModel(self.model)
@@ -274,6 +284,7 @@ class PointsTableView(QTableView):
             new_id,           # ID
             new_id,           # Наименование
             "FREE",           # Тип
+            "working",        # Статус (по умолчанию рабочий)
             "",               # X
             "",               # Y
             "",               # H
@@ -288,7 +299,8 @@ class PointsTableView(QTableView):
         self.point_added.emit({
             'id': new_id,
             'name': new_id,
-            'type': 'FREE'
+            'type': 'FREE',
+            'status': 'working'
         })
     
     def _delete_point(self):
@@ -334,11 +346,12 @@ class PointsTableView(QTableView):
                 'id': self.model.index(row, 0).data(),
                 'name': self.model.index(row, 1).data(),
                 'type': self.model.index(row, 2).data(),
-                'x': self.model.index(row, 3).data(),
-                'y': self.model.index(row, 4).data(),
-                'h': self.model.index(row, 5).data(),
-                'instrument': self.model.index(row, 6).data(),
-                'notes': self.model.index(row, 7).data()
+                'status': self.model.index(row, 3).data(),  # Добавлен статус
+                'x': self.model.index(row, 4).data(),
+                'y': self.model.index(row, 5).data(),
+                'h': self.model.index(row, 6).data(),
+                'instrument': self.model.index(row, 7).data(),
+                'notes': self.model.index(row, 8).data()
             }
             points.append(point_data)
         
@@ -348,10 +361,10 @@ class PointsTableView(QTableView):
         elif file_path.endswith('.csv'):
             with open(file_path, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow(['ID', 'Name', 'Type', 'X', 'Y', 'H', 'Instrument', 'Notes'])
+                writer.writerow(['ID', 'Name', 'Type', 'Status', 'X', 'Y', 'H', 'Instrument', 'Notes'])
                 for point in points:
                     writer.writerow([
-                        point['id'], point['name'], point['type'],
+                        point['id'], point['name'], point['type'], point['status'],
                         point['x'], point['y'], point['h'],
                         point['instrument'], point['notes']
                     ])
@@ -387,6 +400,7 @@ class PointsTableView(QTableView):
                 point.get('id', ''),
                 point.get('name', ''),
                 point.get('type', 'FREE'),
+                point.get('status', 'working'),  # Добавлен статус
                 str(point.get('x', '')),
                 str(point.get('y', '')),
                 str(point.get('h', '')),
@@ -411,11 +425,12 @@ class PointsTableView(QTableView):
                 'id': self.model.index(row, 0).data(),
                 'name': self.model.index(row, 1).data(),
                 'type': self.model.index(row, 2).data(),
-                'x': self.model.index(row, 3).data(),
-                'y': self.model.index(row, 4).data(),
-                'h': self.model.index(row, 5).data(),
-                'instrument': self.model.index(row, 6).data(),
-                'notes': self.model.index(row, 7).data()
+                'status': self.model.index(row, 3).data(),  # Добавлен статус
+                'x': self.model.index(row, 4).data(),
+                'y': self.model.index(row, 5).data(),
+                'h': self.model.index(row, 6).data(),
+                'instrument': self.model.index(row, 7).data(),
+                'notes': self.model.index(row, 8).data()
             }
             points.append(point_data)
         
@@ -427,6 +442,7 @@ class PointsTableView(QTableView):
             point_data.get('id', ''),
             point_data.get('name', ''),
             point_data.get('type', 'FREE'),
+            point_data.get('status', 'working'),  # Добавлен статус
             str(point_data.get('x', '')),
             str(point_data.get('y', '')),
             str(point_data.get('h', '')),
@@ -444,9 +460,10 @@ class PointsTableView(QTableView):
                 self.model.setItem(row, 0, QStandardItem(updated_data.get('id', '')))
                 self.model.setItem(row, 1, QStandardItem(updated_data.get('name', '')))
                 self.model.setItem(row, 2, QStandardItem(updated_data.get('type', 'FREE')))
-                self.model.setItem(row, 3, QStandardItem(str(updated_data.get('x', ''))))
-                self.model.setItem(row, 4, QStandardItem(str(updated_data.get('y', ''))))
-                self.model.setItem(row, 5, QStandardItem(str(updated_data.get('h', ''))))
-                self.model.setItem(row, 6, QStandardItem(updated_data.get('instrument', '')))
-                self.model.setItem(row, 7, QStandardItem(updated_data.get('notes', '')))
+                self.model.setItem(row, 3, QStandardItem(updated_data.get('status', 'working')))  # Статус
+                self.model.setItem(row, 4, QStandardItem(str(updated_data.get('x', ''))))
+                self.model.setItem(row, 5, QStandardItem(str(updated_data.get('y', ''))))
+                self.model.setItem(row, 6, QStandardItem(str(updated_data.get('h', ''))))
+                self.model.setItem(row, 7, QStandardItem(updated_data.get('instrument', '')))
+                self.model.setItem(row, 8, QStandardItem(updated_data.get('notes', '')))
                 break

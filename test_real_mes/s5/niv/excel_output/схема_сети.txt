@@ -1,0 +1,96 @@
+============================================================
+СХЕМА ГЕОДЕЗИЧЕСКОЙ СЕТИ
+============================================================
+
+Всего пунктов: 101
+Всего связей (показано первых 100): 100
+
+СПИСОК ПУНКТОВ:
+----------------------------------------
+  G1
+  G2
+  G5
+  G6
+  G7
+  INTERMEDIATE_007
+  INTERMEDIATE_009
+  INTERMEDIATE_011
+  INTERMEDIATE_014
+  INTERMEDIATE_016
+  INTERMEDIATE_018
+  INTERMEDIATE_019
+  INTERMEDIATE_021
+  INTERMEDIATE_032
+  INTERMEDIATE_035
+  INTERMEDIATE_040
+  INTERMEDIATE_045
+  INTERMEDIATE_047
+  INTERMEDIATE_052
+  INTERMEDIATE_054
+  INTERMEDIATE_064
+  INTERMEDIATE_066
+  J1
+  J2
+  J501
+  J502
+  J508
+  J509
+  J566
+  J567
+  J568
+  J570
+  L2
+  L3
+  L5
+  L7
+  R1
+  TARGET_038
+  TARGET_11
+  TARGET_12
+  TARGET_13
+  TARGET_14
+  TARGET_15
+  TARGET_16
+  TARGET_17
+  TARGET_18
+  TARGET_19
+  TARGET_21
+  TARGET_23
+  TARGET_24
+  ... и еще 51 пунктов
+
+СВЯЗИ МЕЖДУ ПУНКТАМИ:
+----------------------------------------
+  J1 --[direction]--> TARGET_3
+  V500 --[direction]--> TARGET_4
+  V500 --[leveling_height_diff]--> V500
+  V500 --[direction]--> TARGET_6
+  J501 --[direction]--> TARGET_7
+  J501 --[leveling_height_diff]--> J501
+  L3 --[intermediate_leveling]--> INTERMEDIATE_009
+  L3 --[direction]--> TARGET_9
+  J501 --[direction]--> TARGET_11
+  J502 --[direction]--> TARGET_12
+  J502 --[leveling_height_diff]--> J502
+  G2 --[intermediate_leveling]--> INTERMEDIATE_014
+  G2 --[direction]--> TARGET_14
+  J502 --[direction]--> TARGET_16
+  V505 --[direction]--> TARGET_17
+  V505 --[leveling_height_diff]--> V505
+  G1 --[intermediate_leveling]--> INTERMEDIATE_019
+  G1 --[direction]--> TARGET_19
+  L2 --[intermediate_leveling]--> INTERMEDIATE_021
+  L2 --[direction]--> TARGET_21
+  V505 --[direction]--> TARGET_23
+  V506 --[direction]--> TARGET_24
+  V506 --[leveling_height_diff]--> V506
+  V506 --[direction]--> TARGET_26
+  J508 --[direction]--> TARGET_27
+  J508 --[leveling_height_diff]--> J508
+  J508 --[direction]--> TARGET_29
+  J509 --[direction]--> TARGET_30
+  J509 --[leveling_height_diff]--> J509
+  J509 --[intermediate_leveling]--> INTERMEDIATE_032
+  ... и еще 70 связей
+
+============================================================
