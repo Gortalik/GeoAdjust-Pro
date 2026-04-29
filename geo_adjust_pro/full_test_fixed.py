@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Full cycle test for GeoAdjustPro
+Full cycle test for GeoAdjustPro - FIXED VERSION
 Tests: Import (GSI/SDR) -> Preprocessing -> Adjustment -> Reports
+Correctly handles separate plan and height networks
 """
 import sys
 import os
 
-# Add module path
 sys.path.insert(0, '/workspace/geo_adjust_pro')
 
 from parser import GSIParser, SDRParser
@@ -17,10 +17,9 @@ import numpy as np
 
 def main():
     print("=" * 80)
-    print("ПОЛНЫЙ ЦИКЛ ПРОВЕРКИ GeoAdjustPro")
+    print("ПОЛНЫЙ ЦИКЛ ПРОВЕРКИ GeoAdjustPro (ИСПРАВЛЕННЫЙ)")
     print("=" * 80)
     
-    # Initialize
     network = Network()
     engine = AdjustmentEngine()
     reporter = GOSTReportGenerator()
@@ -75,7 +74,6 @@ def main():
     
     print(f"  → Всего из SDR: {sdr_points} точек, {sdr_obs} наблюдений")
     
-    # Summary after import
     print(f"\n>>> ИТОГО В СЕТИ: {len(network.points)} точек, {len(network.observations)} наблюдений")
     
     # ========== STAGE 3: STATUS ANALYSIS ==========
@@ -91,22 +89,21 @@ def main():
     print(f"  Plan - Fixed: {len(fixed_plan)}, Initial: {len(initial_plan)}, Working: {len(working)}")
     print(f"  Height - Fixed: {len(fixed_height)}, Initial: {len(initial_height)}, Working: {len([p for p in network.points.values() if p.height_status == 'working'])}")
     
-    # Auto-fix if needed
-    if len(fixed_plan) < 2:
+    # Auto-fix: закрепляем точки с координатами
+    pts_with_coords = [p for p in network.points.values() if p.x is not None and p.y is not None and p.plan_status == 'initial']
+    if len(fixed_plan) < 2 and len(pts_with_coords) >= 2:
         print("  ! АВТО-ФИКСАЦИЯ: Закрепляем первые 2 точки с координатами...")
-        pts_with_coords = [p for p in network.points.values() if p.x is not None and p.y is not None]
-        for p in pts_with_coords[:2]:
-            p.plan_status = 'fixed'
+        pts_with_coords[0].plan_status = 'fixed'
+        pts_with_coords[1].plan_status = 'fixed'
         fixed_plan = [p for p in network.points.values() if p.plan_status == 'fixed']
         print(f"  → Теперь Fixed (Plan): {len(fixed_plan)}")
     
-    if len(fixed_height) < 1:
+    pts_with_h = [p for p in network.points.values() if p.h is not None and p.height_status == 'initial']
+    if len(fixed_height) < 1 and len(pts_with_h) >= 1:
         print("  ! АВТО-ФИКСАЦИЯ: Закрепляем первую точку с высотой...")
-        pts_with_h = [p for p in network.points.values() if p.h is not None]
-        if pts_with_h:
-            pts_with_h[0].height_status = 'fixed'
-            fixed_height = [p for p in network.points.values() if p.height_status == 'fixed']
-            print(f"  → Теперь Fixed (Height): {len(fixed_height)}")
+        pts_with_h[0].height_status = 'fixed'
+        fixed_height = [p for p in network.points.values() if p.height_status == 'fixed']
+        print(f"  → Теперь Fixed (Height): {len(fixed_height)}")
     
     # ========== STAGE 4: PREPROCESSING ==========
     print("\n[4/7] ПРЕДОБРАБОТКА ДАННЫХ")
@@ -117,7 +114,6 @@ def main():
     
     for obs in network.observations:
         valid = True
-        # Filter gross errors
         if obs.type == 'leveling_height_diff' and abs(obs.value) > 1.0:
             valid = False
         if obs.type in ['slope_distance', 'horizontal_distance'] and obs.value > 10000.0:
@@ -131,7 +127,6 @@ def main():
     print(f"  Удалено грубых ошибок: {removed}")
     print(f"  Осталось наблюдений: {len(network.observations)}")
     
-    # Count by type
     obs_types = {}
     for obs in network.observations:
         obs_types[obs.type] = obs_types.get(obs.type, 0) + 1
@@ -148,7 +143,6 @@ def main():
     if not leveling_obs:
         print("  ! Нет нивелирных наблюдений для уравнивания")
     else:
-        # Build matrices
         h_points = set()
         for o in leveling_obs:
             h_points.add(o.from_point)
@@ -173,7 +167,6 @@ def main():
             A_list.append(row)
             L_list.append(o.value)
             
-            # Weight inversely proportional to distance
             dist = o.distance if hasattr(o, 'distance') and o.distance else 1.0
             weight = 1.0 / max(dist, 0.1)
             P_list.append(weight)
@@ -189,7 +182,6 @@ def main():
             print(f"  Избыточность: {result_h['redundancy']}")
             print(f"  Уравнено точек: {len(result_h['points_stats'])}")
             
-            # Update network
             for name, stats in result_h['points_stats'].items():
                 if name in network.points:
                     network.points[name].h = stats['adjusted_value']
@@ -200,27 +192,31 @@ def main():
             
         except Exception as e:
             print(f"  ✗ Ошибка уравнивания высот: {e}")
-            import traceback
-            traceback.print_exc()
     
     # ========== STAGE 6: PLAN ADJUSTMENT ==========
     print("\n[6/7] УРАВНИВАНИЕ ПЛАНА")
     print("-" * 40)
     
-    plan_obs = [o for o in network.observations if o.type in ['direction', 'angle', 'slope_distance', 'horizontal_distance', 'combined']]
+    # Для планового уравнивания используем ТОЛЬКО точки с начальными координатами
+    plan_points = {pid: p for pid, p in network.points.items() 
+                   if p.x is not None and p.y is not None}
+    
+    plan_obs = [o for o in network.observations 
+                if o.type in ['direction', 'angle', 'slope_distance', 'horizontal_distance', 'combined']
+                and o.from_point in plan_points and o.to_point in plan_points]
     
     if not plan_obs:
         print("  ! Нет плановых наблюдений для уравнивания")
     else:
+        print(f"  Точек с координатами: {len(plan_points)}")
+        print(f"  Наблюдений между ними: {len(plan_obs)}")
+        
         try:
-            result_p = engine.adjust_plan(network.points, plan_obs)
+            result_p = engine.adjust_plan(plan_points, plan_obs)
             
             print(f"  СКП направления: {result_p.sigma0:.2f} \"")
-            print(f"  СКП расстояния: {result_p.sigma0:.2f} мм + {0} ppm")
-            print(f"  Относительная погрешность: 1:{100000:,.0f}")
             print(f"  Уравнено точек: {len(result_p.points_stats)}")
             
-            # Update network
             for name, stats in result_p.points_stats.items():
                 if name in network.points:
                     network.points[name].x = stats['x']
@@ -245,23 +241,18 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     
     try:
-        # Coordinates
         rep_coord = reporter.generate_coordinates_report(network, out_dir)
         print(f"  ✓ {os.path.basename(rep_coord)}")
         
-        # Heights
         rep_height = reporter.generate_heights_report(network, out_dir)
         print(f"  ✓ {os.path.basename(rep_height)}")
         
-        # Error ellipses
         rep_ellipses = reporter.generate_error_ellipses(network, out_dir)
         print(f"  ✓ {os.path.basename(rep_ellipses)}")
         
-        # Network scheme
         rep_scheme = reporter.generate_network_scheme(network, out_dir)
         print(f"  ✓ {os.path.basename(rep_scheme)}")
         
-        # Measurements
         rep_meas = reporter.generate_measurements_report(network, out_dir)
         print(f"  ✓ {os.path.basename(rep_meas)}")
         
@@ -279,22 +270,29 @@ def main():
     
     adjusted_points = [p for p in network.points.values() if p.plan_status == 'adjusted']
     adjusted_heights = [p for p in network.points.values() if p.height_status == 'adjusted']
+    points_with_xy = [p for p in network.points.values() if p.x is not None and not np.isnan(p.x)]
+    points_with_h = [p for p in network.points.values() if p.h is not None and not np.isnan(p.h)]
     
     print(f"Всего пунктов в сети: {len(network.points)}")
+    print(f"  - С координатами X,Y: {len(points_with_xy)}")
+    print(f"  - С высотой H: {len(points_with_h)}")
     print(f"  - Уравнено (план): {len(adjusted_points)}")
     print(f"  - Уравнено (высота): {len(adjusted_heights)}")
     print(f"Всего измерений: {len(network.observations)}")
     
-    # Show sample results
-    print("\nПример результатов (первые 5 точек):")
+    print("\nПример результатов (точки с координатами):")
     print("-" * 80)
     print(f"{'№':<3} {'Имя':<20} {'X':<15} {'Y':<15} {'H':<12} {'Статус'}")
-    for i, (name, point) in enumerate(list(network.points.items())[:5], 1):
-        x_str = f"{point.x:.3f}" if point.x else "-"
-        y_str = f"{point.y:.3f}" if point.y else "-"
-        h_str = f"{point.h:.3f}" if point.h else "-"
-        status = f"P:{point.plan_status}, H:{point.height_status}"
-        print(f"{i:<3} {name:<20} {x_str:<15} {y_str:<15} {h_str:<12} {status}")
+    
+    shown = 0
+    for name, point in network.points.items():
+        if point.x is not None and not np.isnan(point.x) and shown < 10:
+            x_str = f"{point.x:.4f}" if point.x else "-"
+            y_str = f"{point.y:.4f}" if point.y else "-"
+            h_str = f"{point.h:.4f}" if point.h and not np.isnan(point.h) else "-"
+            status = f"P:{point.plan_status}, H:{point.height_status}"
+            print(f"{shown+1:<3} {name:<20} {x_str:<15} {y_str:<15} {h_str:<12} {status}")
+            shown += 1
     
     print("\n✓ ПОЛНЫЙ ЦИКЛ ЗАВЕРШЕН УСПЕШНО")
     print("=" * 80)

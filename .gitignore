@@ -1,23 +1,17 @@
 ```
-# Python
+# Compiled Python files
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
-.Python
-env/
+
+# Logs
+*.log
+*.txt
+
+# Dependencies
 venv/
 .venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
+
+# Original rules preserved
 *.log
-.DS_Store
-Thumbs.db
 ```
