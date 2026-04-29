@@ -10,7 +10,9 @@ class NetworkPoint:
     x: float
     y: float
     h: Optional[float]
-    status: Literal['initial', 'working'] = 'working'  # Статус: исходный или рабочий
+    # Статусы для плана и высоты (отдельно)
+    plan_status: Literal['initial', 'working'] = 'working'  # Статус плановых координат
+    height_status: Literal['initial', 'working'] = 'working'  # Статус высотной отметки
     sigma_x_apriori: float = 0.0
     sigma_y_apriori: float = 0.0
     sigma_h_apriori: float = 0.0

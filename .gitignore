@@ -1,1 +1,35 @@
-Nothing should be ignored based on the provided file changes. The only modified file is a Python source file (`GeoAdjustPro/src/geoadjust/io/formats/sdr.py`), which should not be added to .gitignore.
+```
+# Compiled Python files
+*.pyc
+__pycache__/
+
+# Virtual environments
+venv/
+.venv/
+.env
+.env.local
+*.env.*
+
+# Build/dist directories
+dist/
+build/
+target/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Coverage reports
+.coverage
+coverage/
+htmlcov/
+
+# Python cache
+.mypy_cache/
+.pytest_cache/
+```

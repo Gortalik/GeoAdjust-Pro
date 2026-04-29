@@ -141,7 +141,8 @@ class SDRParser:
                         points[point_id] = {
                             'point_id': point_id,
                             'coord_type': 'FREE',  # Станции - свободные точки
-                            'status': 'working',   # По умолчанию рабочий пункт
+                            'plan_status': 'working',   # По умолчанию рабочий план
+                            'height_status': 'working', # По умолчанию рабочая высота
                             'x': setup_data.get('x'),  # Начальные приближения из файла
                             'y': setup_data.get('y'),
                             'h': setup_data.get('h')
@@ -178,7 +179,8 @@ class SDRParser:
                                 'y': coord_data.get('y'),
                                 'h': coord_data.get('h'),
                                 'coord_type': 'FIXED',  # Координаты из файла - опорные
-                                'status': 'initial'    # Пункты с координатами - исходные
+                                'plan_status': 'initial',    # План исходный
+                                'height_status': 'initial'   # Высота исходная
                             })
                             logger.debug(f"Обновлены координаты точки {found_key}: X={coord_data.get('x')}, Y={coord_data.get('y')}, H={coord_data.get('h')}")
                         else:
@@ -186,7 +188,8 @@ class SDRParser:
                             points[point_id] = {
                                 'point_id': point_id,
                                 'coord_type': 'FIXED',  # Координаты из файла - опорные
-                                'status': 'initial',   # Исходный пункт
+                                'plan_status': 'initial',   # План исходный
+                                'height_status': 'initial', # Высота исходная
                                 'x': coord_data.get('x'),
                                 'y': coord_data.get('y'),
                                 'h': coord_data.get('h')
@@ -249,7 +252,8 @@ class SDRParser:
                 'y': p.get('y', 0.0) or 0.0,
                 'h': p.get('h', 0.0) or 0.0,
                 'point_type': p.get('coord_type', 'FREE'),
-                'status': p.get('status', 'working')  # Добавляем статус
+                'plan_status': p.get('plan_status', 'working'),
+                'height_status': p.get('height_status', 'working')
             })
 
         # Конвертируем в объекты CombinedObservation
