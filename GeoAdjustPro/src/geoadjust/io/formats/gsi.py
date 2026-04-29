@@ -582,12 +582,12 @@ class GSIParser:
                         logger.info(f"Processing leveling measurement on line {line_num}, station {current_station}")
                         self._process_leveling_measurement(parsed_words, line_num, observations, station_sessions, current_station, current_traverse)
 
-                    # Проверяем на промежуточные измерения (333, 335, 336)
-                    intermediate_words = [w for w in parsed_words if w.number in [333, 335, 336]]
-                    if intermediate_words:
+                    # Проверяем на промежуточные измерения (333 - боковое нивелирование)
+                    intermediate_words = [w for w in parsed_words if w.number == 333]
+                    if intermediate_words and current_station:
                         # Создаем боковое измерение
                         logger.info(f"Processing intermediate measurement on line {line_num}, station {current_station}")
-                        self._process_intermediate_measurement(parsed_words, line_num, observations, station_sessions, current_station, current_course)
+                        self._process_intermediate_measurement(parsed_words, line_num, observations, station_sessions, current_station, current_traverse)
 
                     # Обрабатываем тахеометрические измерения (направления, расстояния)
                     codes = {word.number for word in parsed_words}
@@ -647,26 +647,31 @@ class GSIParser:
             return 'нет отсчёта'
         return 'неопределено'
 
-    def _process_leveling_measurement(self, words, line_num, observations, station_sessions, current_station, current_course):
+    def _process_leveling_measurement(self, words, line_num, observations, station_sessions, current_station, current_traverse):
         """Обработка нивелирного измерения превышения"""
         height_diff_word = None
         instrument_height = None
         distance = None
+        target_name = None
 
-        # Извлекаем релевантные слова
+        # Извлекаем релевантные слова и определяем тип точки
         for word in words:
-            if word.number in [573, 574]:  # Превышение
+            if word.number == 573:  # Превышение (прямое)
                 height_diff_word = word
-            elif word.number == 574:  # Расстояние для 574
+            elif word.number == 574:  # Расстояние
                 distance = word.value
             elif word.number in [83, 87]:  # Высота инструмента
                 instrument_height = word.value
+            # Извлекаем имя цели из идентификаторов
+            if word.identifier and word.number not in [83, 87]:
+                target_name = word.identifier.strip()
 
         if not height_diff_word:
             return
 
-        # Определяем цель (из контекста или по умолчанию)
-        target_name = f"TARGET_{line_num:03d}"  # Временное имя
+        # Если цель не найдена, создаем временное имя
+        if not target_name:
+            target_name = f"TARGET_{line_num:03d}"
 
         # Создаем сессию станции
         session_id = f"SESSION_{self._station_counter:03d}"
@@ -702,45 +707,54 @@ class GSIParser:
             reading_type=reading_type
         )
         observations.append(obs)
-        session.observations.append(obs)
+        if session:
+            session.observations.append(obs)
 
-        # Создаем GSIRecord
+        # Создаем GSIRecord и добавляем в traverse
         if current_traverse:
             record = GSIRecord(
                 point_id=target_name,
-                section_id=current_section or 1,
+                section_id=current_traverse.name.split(' - ')[-1] if ' - ' in current_traverse.name else 1,
                 reading_type=reading_type,
                 rod_reading=instrument_height or 0,
                 distance=distance or 0,
-                angle=0,  # для leveling
+                angle=0,
                 dh=height_diff_word.value
             )
             current_traverse.records.append(record)
+            
+            # Добавляем точку в список точек хода
+            if target_name not in current_traverse.points_list:
+                current_traverse.points_list.append(target_name)
 
-    def _process_intermediate_measurement(self, words, line_num, observations, station_sessions, current_station, current_course):
+    def _process_intermediate_measurement(self, words, line_num, observations, station_sessions, current_station, current_traverse):
         """Обработка промежуточного (бокового) измерения"""
         distance_word = None
         instrument_height = None
+        target_name = None
 
         # Извлекаем релевантные слова
         for word in words:
-            if word.number in [333, 335, 336]:  # Промежуточные расстояния
+            if word.number == 333:  # Промежуточное расстояние (боковое нивелирование)
                 distance_word = word
+                if word.identifier:
+                    target_name = word.identifier.strip()
             elif word.number in [83, 87]:  # Высота инструмента
                 instrument_height = word.value
 
         if not distance_word:
             return
 
-        # Определяем цель (из идентификатора или по умолчанию)
-        target_name = distance_word.identifier if distance_word.identifier else f"INTERMEDIATE_{line_num:03d}"
+        # Если цель не найдена, создаем временное имя
+        if not target_name:
+            target_name = f"INTERMEDIATE_{line_num:03d}"
 
         # Создаем измерение бокового нивелирования
         obs = GSIObservation(
             obs_type='intermediate_leveling',
             from_point=current_station,
             to_point=target_name,
-            value=distance_word.value,  # Для промежуточных измерений значение - это расстояние
+            value=distance_word.value,
             station_session_id=f"SESSION_{self._station_counter}",
             instrument_height=instrument_height,
             line_number=line_num,
@@ -749,7 +763,7 @@ class GSIParser:
         )
         observations.append(obs)
 
-        # Создаем SidePoint
+        # Создаем SidePoint и добавляем в traverse
         if current_traverse:
             side_point = SidePoint(
                 point_name=target_name,
@@ -757,6 +771,10 @@ class GSIParser:
                 distance=distance_word.value
             )
             current_traverse.side_points.append(side_point)
+            
+            # Добавляем точку в список точек хода
+            if target_name not in current_traverse.points_list:
+                current_traverse.points_list.append(target_name)
 
     def _process_tacheometric_measurements(self, words, line_num, observations, station_sessions, current_station):
         """Обработка тахеометрических измерений (направления, расстояния, углы)"""
