@@ -9,9 +9,11 @@ from typing import Optional, List, Dict, Any
 class NetworkPoint:
     """Пункт геодезической сети"""
     id: str
+    name: str = None  # Alias для id
     x: Optional[float] = None
     y: Optional[float] = None
     z: Optional[float] = None
+    h: Optional[float] = None  # Alias для z
     
     # Статусы для плана и высоты разделяются
     plan_status: str = 'working'  # 'initial', 'fixed', 'working', 'adjusted'
@@ -22,17 +24,25 @@ class NetworkPoint:
     description: str = ''
     attributes: Dict[str, Any] = field(default_factory=dict)
     
-    def has_plan_coords(self) -> bool:
-        return self.x is not None and self.y is not None
+    def __post_init__(self):
+        if self.name is None:
+            self.name = self.id
+        if self.h is not None and self.z is None:
+            self.z = self.h
+        if self.z is not None and self.h is None:
+            self.h = self.z
     
-    def has_height(self) -> bool:
-        return self.z is not None
+    @property
+    def X(self):
+        return self.x
     
-    def is_plan_fixed(self) -> bool:
-        return self.plan_status in ['initial', 'fixed']
+    @property
+    def Y(self):
+        return self.y
     
-    def is_height_fixed(self) -> bool:
-        return self.height_status in ['initial', 'fixed']
+    @property
+    def H(self):
+        return self.h or self.z
 
 @dataclass
 class Observation:
@@ -79,6 +89,27 @@ class NetworkData:
     def add_observation(self, obs: Observation):
         self.observations.append(obs)
     
+    def merge_data(self, other: 'NetworkData'):
+        """Объединение данных из другой сети"""
+        for pid, point in other.points.items():
+            if pid not in self.points:
+                self.points[pid] = point
+            else:
+                existing = self.points[pid]
+                if point.x is not None:
+                    existing.x = point.x
+                if point.y is not None:
+                    existing.y = point.y
+                if point.h is not None or point.z is not None:
+                    existing.h = point.h or point.z
+                    existing.z = existing.h
+                if point.plan_status in ['fixed', 'initial']:
+                    existing.plan_status = point.plan_status
+                if point.height_status in ['fixed', 'initial']:
+                    existing.height_status = point.height_status
+        for obs in other.observations:
+            self.observations.append(obs)
+
     def get_point(self, point_id: str) -> Optional[NetworkPoint]:
         return self.points.get(point_id)
     
@@ -103,3 +134,6 @@ class NetworkData:
             if status in counts:
                 counts[status] += 1
         return counts
+
+# Alias для совместимости
+Network = NetworkData
