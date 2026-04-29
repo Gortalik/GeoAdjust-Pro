@@ -1,47 +1,59 @@
 ```
-# Compiled Python files
+# Compiled and build artifacts
 *.pyc
 __pycache__/
 
 # Dependencies
 .venv/
 venv/
-env/
-lib/
-Lib/
-Scripts/
-bin/
-
-# Build/dist directories
-build/
-dist/
+node_modules/
 *.egg-info/
+dist/
+build/
+target/
 
-# Logs
+# Logs and temp files
 *.log
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Environment files
-.env
-.env.local
-*.env*
-
-# Coverage reports
-.coverage
-htmlcov/
-coverage/
-
-# IDE specific
-.vscode/
-.idea/
+*.tmp
 *.swp
 *.swo
 
-# Testing
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# Python specific
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage.*
+.cache/
 .pytest_cache/
 .mypy_cache/
-*.tmp
+
+# Julia specific
+julia-*/
+*.ji
+
+# Zig specific
+zig*/
 ```
