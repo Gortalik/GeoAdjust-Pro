@@ -138,8 +138,13 @@ class GOSTReportGenerator:
             f.write("-" * 80 + "\n")
             
             for i, obs in enumerate(network.observations[:100], 1):  # Первые 100
-                v = getattr(obs, 'residual', 0.0)  # Поправка (если есть)
-                f.write(f"{i:<5} {obs.type:<20} {obs.from_point:<15} {obs.to_point:<15} {obs.value:<12.4f} {v:<12.4f}\n")
+                v = getattr(obs, 'residual', None)  # Поправка (если есть)
+                v_str = f"{v:.4f}" if v is not None else "-"
+                value_str = f"{obs.value:.4f}" if obs.value is not None else "-"
+                from_str = obs.from_point if obs.from_point else "-"
+                to_str = obs.to_point if obs.to_point else "-"
+                type_str = obs.type if obs.type else "unknown"
+                f.write(f"{i:<5} {type_str:<20} {from_str:<15} {to_str:<15} {value_str:<12} {v_str:<12}\n")
             
             if len(network.observations) > 100:
                 f.write(f"\n... и еще {len(network.observations) - 100} измерений\n")

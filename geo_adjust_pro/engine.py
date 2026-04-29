@@ -405,6 +405,10 @@ class GeoAdjustEngine:
                 self.points[pid].x = approx_coords[pid][0]
                 self.points[pid].y = approx_coords[pid][1]
                 self.points[pid].plan_status = 'adjusted'
+                # Сохраняем параметры точности в атрибуты точки для отчетов
+                self.points[pid].x_std = std_x
+                self.points[pid].y_std = std_y
+                self.points[pid].xy_cov = 0.0  # Упрощенно, можно рассчитать через N_inv
                 
                 points_stats[pid] = {
                     'x': approx_coords[pid][0],
