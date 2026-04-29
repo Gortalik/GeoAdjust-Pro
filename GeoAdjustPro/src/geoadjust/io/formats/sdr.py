@@ -141,6 +141,7 @@ class SDRParser:
                         points[point_id] = {
                             'point_id': point_id,
                             'coord_type': 'FREE',  # Станции - свободные точки
+                            'status': 'working',   # По умолчанию рабочий пункт
                             'x': setup_data.get('x'),  # Начальные приближения из файла
                             'y': setup_data.get('y'),
                             'h': setup_data.get('h')
@@ -176,11 +177,21 @@ class SDRParser:
                                 'x': coord_data.get('x'),
                                 'y': coord_data.get('y'),
                                 'h': coord_data.get('h'),
-                                'coord_type': 'FIXED'  # Координаты из файла - опорные
+                                'coord_type': 'FIXED',  # Координаты из файла - опорные
+                                'status': 'initial'    # Пункты с координатами - исходные
                             })
                             logger.debug(f"Обновлены координаты точки {found_key}: X={coord_data.get('x')}, Y={coord_data.get('y')}, H={coord_data.get('h')}")
                         else:
-                            logger.warning(f"Точка {point_id} не найдена в списке точек для обновления координат")
+                            # Создаем новую точку с координатами (исходный пункт)
+                            points[point_id] = {
+                                'point_id': point_id,
+                                'coord_type': 'FIXED',  # Координаты из файла - опорные
+                                'status': 'initial',   # Исходный пункт
+                                'x': coord_data.get('x'),
+                                'y': coord_data.get('y'),
+                                'h': coord_data.get('h')
+                            }
+                            logger.debug(f"Создана новая точка {point_id} с координатами: X={coord_data.get('x')}, Y={coord_data.get('y')}, H={coord_data.get('h')}")
 
                 elif record_type.startswith('09'):  # Измерение (09F1, 09F2)
                     if not current_setup:
@@ -237,7 +248,8 @@ class SDRParser:
                 'x': p.get('x', 0.0) or 0.0,
                 'y': p.get('y', 0.0) or 0.0,
                 'h': p.get('h', 0.0) or 0.0,
-                'point_type': p.get('coord_type', 'FREE')
+                'point_type': p.get('coord_type', 'FREE'),
+                'status': p.get('status', 'working')  # Добавляем статус
             })
 
         # Конвертируем в объекты CombinedObservation
