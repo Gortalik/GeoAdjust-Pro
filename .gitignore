@@ -1,35 +1,35 @@
 ```
-# Compiled Python files
-*.pyc
-__pycache__/
+# Output directories
+geoadjust_output/
+test_output/
 
-# Virtual environments
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
 venv/
 .venv/
-.env
-.env.local
-*.env.*
-
-# Build/dist directories
+.venv*/
+.ENV
+.ENV*/
+.egg-info/
+*.egg-info/
+*.egg
 dist/
 build/
-target/
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
+*.so
+*.dylib
+*.dll
 
 # Logs
 *.log
 
-# Coverage reports
+# Coverage
 .coverage
-coverage/
 htmlcov/
-
-# Python cache
-.mypy_cache/
-.pytest_cache/
+.coverage.*
+.coverage.xml
 ```
