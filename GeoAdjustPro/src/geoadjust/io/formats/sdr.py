@@ -207,11 +207,26 @@ class SDRParser:
                     measurements = self._parse_measurement(line)
                     for measurement in measurements:
                         # measurement уже является объектом SDRCombinedMeasurement
+                        target_id = measurement.target_id.upper() if measurement.target_id else ''
+                        
+                        # Добавляем целевую точку в список points, если её нет
+                        if target_id and target_id not in points:
+                            points[target_id] = {
+                                'point_id': target_id,
+                                'coord_type': 'FREE',  # Целевые точки - свободные
+                                'plan_status': 'working',
+                                'height_status': 'working',
+                                'x': None,  # Координаты будут вычислены в предобработке
+                                'y': None,
+                                'h': None
+                            }
+                            logger.debug(f"Добавлена целевая точка {target_id} из измерения")
+                        
                         # Создаем SDRObservation для совместимости, но с объединенными данными
                         obs = SDRObservation(
                             obs_type='combined',  # Для UI
                             from_point=current_setup.point_id,
-                            to_point=measurement.target_id,
+                            to_point=target_id,
                             value=None,
                             setup_id=current_setup.setup_id,
                             face_position=measurement.face_position,

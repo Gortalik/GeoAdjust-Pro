@@ -99,6 +99,7 @@ class CombinedObservation:
     slope_distance: Optional[float] = None
     raw_line: Optional[str] = None
     is_active: bool = True  # Добавлено для совместимости с EquationsBuilder
+    sigma_apriori: Optional[float] = None  # Добавлено для совместимости с WeightBuilder
 
     def __post_init__(self):
         # Добавляем поле для совместимости с фильтрацией

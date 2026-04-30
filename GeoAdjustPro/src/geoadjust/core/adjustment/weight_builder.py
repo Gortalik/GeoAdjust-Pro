@@ -151,7 +151,7 @@ class WeightBuilder:
                 f"Прибор {instrument_name or 'не указан'} не найден в библиотеке. "
                 f"Используется стандартная СКО для {obs.obs_type}."
             )
-            return self._get_default_sigma(obs.obs_type, obs.value)
+            return self._get_default_sigma(obs.obs_type, getattr(obs, "value", None))
         
         # Расчёт СКО в зависимости от типа измерения
         if obs.obs_type in ['direction', 'azimuth']:
@@ -468,7 +468,7 @@ class WeightBuilder:
         
         return None
     
-    def _get_default_sigma(self, obs_type: str, value: float) -> float:
+    def _get_default_sigma(self, obs_type: str, value: float = None) -> float:
         """
         Получение стандартной СКО для типа измерения (заглушка).
         
@@ -491,7 +491,8 @@ class WeightBuilder:
             'zenith_angle': 10.0 / 206265,
             'distance': 0.010,  # 10 мм
             'height_diff': 0.005,  # 5 мм
-            'gnss_vector': 0.010,  # 10 мм
+            'gnss_vector': 0.010,
+            'combined': 0.010,  # Для объединённых измерений  # 10 мм
         }
         
         sigma = default_sigmas.get(obs_type, 0.01)
