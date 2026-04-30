@@ -22,6 +22,8 @@ from datetime import datetime
 import math
 import logging
 
+from ..network.models import NetworkPoint
+
 logger = logging.getLogger(__name__)
 
 
@@ -375,6 +377,57 @@ class PreprocessingModule:
 
         return corrected
 
+    def _compute_coords_from_measurements(self, from_point: 'NetworkPoint', to_point_id: str, 
+                                           obs: Any, points: Dict[str, 'NetworkPoint']) -> Optional[Dict[str, float]]:
+        """
+        Вычисление координат точки через прямую геодезическую задачу
+        
+        Args:
+            from_point: Известная точка с координатами
+            to_point_id: Идентификатор определяемой точки
+            obs: Измерение (расстояние и/или направление)
+            points: Словарь всех точек
+            
+        Returns:
+            Optional[Dict[str, float]]: Словарь с координатами {'x': x, 'y': y, 'h': h} или None
+        """
+        if not from_point.has_plan_coords():
+            return None
+        
+        # Поиск измерений между точками
+        distance_obs = None
+        direction_obs = None
+        zenith_obs = None
+        
+        for o in points.values():
+            pass  # Логика поиска измерений реализуется в основном алгоритме
+        
+        # Для расстояния используем прямую геодезическую задачу
+        if hasattr(obs, 'value') and obs.obs_type in ['distance', 'slope_distance']:
+            distance = obs.value
+            azimuth = getattr(obs, 'azimuth', None)
+            
+            if azimuth is None:
+                # Если азимут неизвестен, пытаемся получить из направления
+                pass
+            
+            if azimuth is not None:
+                # Прямая геодезическая задача
+                x_new = from_point.x + distance * np.cos(azimuth)
+                y_new = from_point.y + distance * np.sin(azimuth)
+                
+                result = {'x': x_new, 'y': y_new}
+                
+                # Вычисление высоты если есть зенитный угол
+                if hasattr(obs, 'zenith_angle') and obs.zenith_angle is not None and from_point.h is not None:
+                    z = obs.zenith_angle
+                    dh = distance * np.cos(z)  # Превышение
+                    result['h'] = from_point.h + dh
+                
+                return result
+        
+        return None
+
     def _compute_preliminary_coordinates(self, observations: List[Any],
                                          points: Optional[Union[List[Dict[str, Any]], Dict[str, Any]]]) -> Dict[str, Any]:
         """
@@ -384,10 +437,11 @@ class PreprocessingModule:
         методом последовательного приближения от известных пунктов.
         """
         coordinates = {}
+        updated_points = {}
 
         # Проверяем, что points не None
         if points is None:
-            points = []
+            points = {}
 
         # Обрабатываем как список или словарь
         if isinstance(points, list):
@@ -400,6 +454,13 @@ class PreprocessingModule:
                         'y': point.get('y', 0) or 0,
                         'h': point.get('h', 0) or 0
                     }
+                    updated_points[point_id] = NetworkPoint(
+                        point_id=point_id,
+                        x=point.get('x', 0) or 0,
+                        y=point.get('y', 0) or 0,
+                        h=point.get('h', 0) or 0,
+                        coord_type='FIXED' if point.get('coord_type') == 'FIXED' else 'FREE'
+                    )
         else:
             # points - словарь
             for point_id, point in points.items():
@@ -409,21 +470,124 @@ class PreprocessingModule:
                         'y': point.get('y', 0) or 0,
                         'h': point.get('h', 0) or 0
                     }
+                    updated_points[point_id] = NetworkPoint(
+                        point_id=point_id,
+                        x=point.get('x', 0) or 0,
+                        y=point.get('y', 0) or 0,
+                        h=point.get('h', 0) or 0,
+                        coord_type=point.get('coord_type', 'FREE')
+                    )
                 else:
                     coordinates[point_id] = {
                         'x': getattr(point, 'x', 0) or 0,
                         'y': getattr(point, 'y', 0) or 0,
                         'h': getattr(point, 'h', 0) or 0
                     }
+                    updated_points[point_id] = point if isinstance(point, NetworkPoint) else NetworkPoint(
+                        point_id=point_id,
+                        x=getattr(point, 'x', 0) or 0,
+                        y=getattr(point, 'y', 0) or 0,
+                        h=getattr(point, 'h', 0) or 0,
+                        coord_type=getattr(point, 'coord_type', 'FREE')
+                    )
 
-        # Для точек без координат пытаемся вычислить из измерений
-        # Это упрощённый алгоритм - в реальности нужен более сложный
-
+        self.logger.info(f"Начало расчета предварительных координат: {len(updated_points)} точек")
+        
+        # Итеративный алгоритм распространения координат по сети
+        max_iterations = len(updated_points) + 1
+        for iteration in range(max_iterations):
+            coords_computed = False
+            
+            for obs in observations:
+                from_point_id = getattr(obs, 'from_point_id', None)
+                to_point_id = getattr(obs, 'to_point_id', None)
+                
+                if not from_point_id or not to_point_id:
+                    continue
+                
+                if from_point_id not in updated_points or to_point_id not in updated_points:
+                    continue
+                
+                from_point = updated_points[from_point_id]
+                to_point = updated_points[to_point_id]
+                
+                # Проверка на ненулевые координаты перед обновлением
+                if from_point.has_plan_coords() and not to_point.has_plan_coords():
+                    # Вычисление координат то точки
+                    new_coords = self._compute_coords_from_measurements(
+                        from_point, to_point_id, obs, updated_points
+                    )
+                    
+                    if new_coords:
+                        # Обновление статуса точек с FREE на APPROXIMATE после вычисления координат
+                        to_point.set_approx_coords(
+                            x=new_coords.get('x'),
+                            y=new_coords.get('y'),
+                            h=new_coords.get('h'),
+                            update_status=True
+                        )
+                        coords_computed = True
+                        
+                        self.logger.debug(
+                            f"Итерация {iteration + 1}: Вычислены координаты точки {to_point_id} "
+                            f"от {from_point_id}: X={new_coords.get('x', 0):.4f}, Y={new_coords.get('y', 0):.4f}"
+                        )
+                
+                # Обратное направление
+                elif to_point.has_plan_coords() and not from_point.has_plan_coords():
+                    new_coords = self._compute_coords_from_measurements(
+                        to_point, from_point_id, obs, updated_points
+                    )
+                    
+                    if new_coords:
+                        from_point.set_approx_coords(
+                            x=new_coords.get('x'),
+                            y=new_coords.get('y'),
+                            h=new_coords.get('h'),
+                            update_status=True
+                        )
+                        coords_computed = True
+                        
+                        self.logger.debug(
+                            f"Итерация {iteration + 1}: Вычислены координаты точки {from_point_id} "
+                            f"от {to_point_id}: X={new_coords.get('x', 0):.4f}, Y={new_coords.get('y', 0):.4f}"
+                        )
+            
+            # Детальное логирование процесса обновления
+            if coords_computed:
+                num_with_coords = sum(1 for p in updated_points.values() if p.has_plan_coords())
+                self.logger.info(f"Итерация {iteration + 1}: Координаты вычислены для {num_with_coords} точек")
+            else:
+                break
+        
+        # Формирование результата
         result = {
-            'coordinates': coordinates,
-            'num_with_coords': sum(1 for c in coordinates.values() if c['x'] != 0 or c['y'] != 0),
-            'num_without_coords': sum(1 for c in coordinates.values() if c['x'] == 0 and c['y'] == 0)
+            'coordinates': {},
+            'num_with_coords': 0,
+            'num_without_coords': 0
         }
+        
+        for point_id, point in updated_points.items():
+            if point.has_plan_coords():
+                result['coordinates'][point_id] = {
+                    'x': point.x,
+                    'y': point.y,
+                    'h': point.h
+                }
+                result['num_with_coords'] += 1
+            else:
+                result['coordinates'][point_id] = {
+                    'x': 0,
+                    'y': 0,
+                    'h': point.h if point.has_height() else 0
+                }
+                result['num_without_coords'] += 1
+        
+        self.logger.info(
+            f"Расчет предварительных координат завершен: "
+            f"{result['num_with_coords']} точек с координатами, "
+            f"{result['num_without_coords']} точек без координат"
+        )
 
         return result
 

@@ -1,6 +1,6 @@
 # src/geoadjust/core/network/models.py
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Literal
+from typing import List, Optional, Dict, Literal, Tuple
 from datetime import datetime
 
 @dataclass
@@ -23,6 +23,68 @@ class NetworkPoint:
     # Географические координаты для работы с геоидом
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    
+    def has_plan_coords(self) -> bool:
+        """Проверка наличия плановых координат (X, Y)"""
+        return self.x is not None and self.y is not None and (self.x != 0.0 or self.y != 0.0)
+    
+    def has_height(self) -> bool:
+        """Проверка наличия высоты (H)"""
+        return self.h is not None and self.h != 0.0
+    
+    def get_approx_xy(self) -> Tuple[Optional[float], Optional[float]]:
+        """Получение приближенных плановых координат
+        
+        Returns:
+            Tuple[Optional[float], Optional[float]]: (x, y) координаты или (None, None) если отсутствуют
+        """
+        if self.has_plan_coords():
+            return (self.x, self.y)
+        return (None, None)
+    
+    def get_approx_h(self) -> Optional[float]:
+        """Получение приближенной высоты
+        
+        Returns:
+            Optional[float]: Высота или None если отсутствует
+        """
+        if self.has_height():
+            return self.h
+        return None
+    
+    def set_approx_coords(self, x: Optional[float] = None, y: Optional[float] = None, 
+                          h: Optional[float] = None, update_status: bool = True) -> bool:
+        """Установка приближенных координат
+        
+        Args:
+            x: Плановая координата X
+            y: Плановая координата Y
+            h: Высота
+            update_status: Обновлять ли статус точки на APPROXIMATE
+            
+        Returns:
+            bool: True если координаты были обновлены
+        """
+        updated = False
+        
+        if x is not None and self.x != x:
+            self.x = x
+            updated = True
+        
+        if y is not None and self.y != y:
+            self.y = y
+            updated = True
+        
+        if h is not None and self.h != h:
+            self.h = h
+            updated = True
+        
+        # Обновление статуса точки с FREE на APPROXIMATE после вычисления координат
+        if update_status and updated and self.coord_type == 'FREE':
+            if self.has_plan_coords():
+                self.coord_type = 'APPROXIMATE'
+        
+        return updated
 
 @dataclass
 class Observation:
