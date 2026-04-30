@@ -1,6 +1,6 @@
 # src/geoadjust/core/network/models.py
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Literal
+from typing import List, Optional, Dict, Literal, Tuple
 from datetime import datetime
 
 @dataclass
@@ -23,6 +23,35 @@ class NetworkPoint:
     # Географические координаты для работы с геоидом
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    
+    def has_plan_coords(self) -> bool:
+        """Проверяет наличие плановых координат (X, Y)"""
+        return self.x is not None and self.y is not None and (self.x != 0 or self.y != 0)
+    
+    def has_height(self) -> bool:
+        """Проверяет наличие высоты (H)"""
+        return self.h is not None and self.h != 0
+    
+    def get_approx_xy(self) -> Tuple[float, float]:
+        """Возвращает приближённые координаты (X, Y). Если нет координат, возвращает (0, 0)"""
+        return (self.x if self.x is not None else 0.0, 
+                self.y if self.y is not None else 0.0)
+    
+    def get_approx_h(self) -> float:
+        """Возвращает приближённую высоту. Если нет высоты, возвращает 0.0"""
+        return self.h if self.h is not None else 0.0
+    
+    def set_approx_coords(self, x: float, y: float, h: Optional[float] = None):
+        """Устанавливает приближённые координаты"""
+        self.x = x
+        self.y = y
+        if h is not None:
+            self.h = h
+        if not self.has_plan_coords():
+            self.coord_type = 'FREE'
+        else:
+            self.coord_type = 'APPROXIMATE'
+        self.plan_status = 'working'
 
 @dataclass
 class Observation:
@@ -69,6 +98,7 @@ class CombinedObservation:
     zenith_angle: Optional[float] = None
     slope_distance: Optional[float] = None
     raw_line: Optional[str] = None
+    is_active: bool = True  # Добавлено для совместимости с EquationsBuilder
 
     def __post_init__(self):
         # Добавляем поле для совместимости с фильтрацией

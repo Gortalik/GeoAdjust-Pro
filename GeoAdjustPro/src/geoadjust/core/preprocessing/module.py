@@ -400,6 +400,15 @@ class PreprocessingModule:
                         'y': point.get('y', 0) or 0,
                         'h': point.get('h', 0) or 0
                     }
+                elif hasattr(point, 'point_id'):
+                    # NetworkPoint object
+                    point_id = point.point_id
+                    coordinates[point_id] = {
+                        'x': point.x if point.x is not None else 0,
+                        'y': point.y if point.y is not None else 0,
+                        'h': point.h if point.h is not None else 0,
+                        '_point_obj': point  # Сохраняем ссылку на объект
+                    }
         else:
             # points - словарь
             for point_id, point in points.items():
@@ -413,11 +422,12 @@ class PreprocessingModule:
                     coordinates[point_id] = {
                         'x': getattr(point, 'x', 0) or 0,
                         'y': getattr(point, 'y', 0) or 0,
-                        'h': getattr(point, 'h', 0) or 0
+                        'h': getattr(point, 'h', 0) or 0,
+                        '_point_obj': point  # Сохраняем ссылку на объект
                     }
 
-        # Для точек без координат пытаемся вычислить из измерений
-        # Это упрощённый алгоритм - в реальности нужен более сложный
+        # Вычисляем координаты для точек без них используя прямую геодезическую задачу
+        self._compute_coords_from_measurements(observations, coordinates)
 
         result = {
             'coordinates': coordinates,
@@ -426,6 +436,142 @@ class PreprocessingModule:
         }
 
         return result
+
+    def _compute_coords_from_measurements(self, observations: List[Any], 
+                                          coordinates: Dict[str, Dict[str, Any]]):
+        """
+        Вычисление приближенных координат для точек без координат
+        используя прямую геодезическую задачу от известных точек.
+        """
+        # Собираем измерения расстояний и направлений
+        distance_obs = []
+        direction_obs = []
+        
+        for obs in observations:
+            obs_type = self._get_obs_type(obs)
+            
+            # Обработка CombinedObservation
+            if hasattr(obs, 'horizontal_angle') and hasattr(obs, 'slope_distance'):
+                if obs.horizontal_angle is not None:
+                    direction_obs.append(obs)
+                if obs.slope_distance is not None:
+                    distance_obs.append(obs)
+            elif obs_type in ['distance', 'slope_distance', 'horizontal_distance']:
+                distance_obs.append(obs)
+            elif obs_type in ['direction', 'angle', 'azimuth']:
+                direction_obs.append(obs)
+        
+        # Итеративно вычисляем координаты
+        max_iterations = 10
+        for iteration in range(max_iterations):
+            coords_computed = False
+            
+            # Пытаемся вычислить координаты из расстояний
+            for obs in distance_obs:
+                from_p = self._get_from_point(obs)
+                to_p = self._get_to_point(obs)
+                
+                # Получаем расстояние (для CombinedObservation используем slope_distance)
+                if hasattr(obs, 'slope_distance') and obs.slope_distance is not None:
+                    dist = obs.slope_distance
+                else:
+                    dist = self._get_value(obs)
+                
+                if dist <= 0:
+                    continue
+                
+                # Если известна точка from_p, но неизвестна to_p
+                if (coordinates.get(from_p, {}).get('x', 0) != 0 or 
+                    coordinates.get(from_p, {}).get('y', 0) != 0):
+                    if coordinates.get(to_p, {}).get('x', 0) == 0 and \
+                       coordinates.get(to_p, {}).get('y', 0) == 0:
+                        # Нужен азимут для вычисления координат
+                        # Ищем направление от from_p к to_p
+                        azimuth = self._find_azimuth(direction_obs, from_p, to_p, coordinates)
+                        
+                        if azimuth is not None:
+                            # Прямая геодезическая задача
+                            dx = dist * np.cos(azimuth)
+                            dy = dist * np.sin(azimuth)
+                            coordinates[to_p]['x'] = coordinates[from_p]['x'] + dx
+                            coordinates[to_p]['y'] = coordinates[from_p]['y'] + dy
+                            
+                            # Обновляем объект точки если есть ссылка
+                            if '_point_obj' in coordinates.get(to_p, {}):
+                                pt = coordinates[to_p]['_point_obj']
+                                if hasattr(pt, 'set_approx_coords'):
+                                    pt.set_approx_coords(coordinates[to_p]['x'], 
+                                                        coordinates[to_p]['y'])
+                            
+                            coords_computed = True
+                            self.logger.info(f"Вычислены координаты {to_p} из {from_p}: "
+                                           f"X={coordinates[to_p]['x']:.3f}, Y={coordinates[to_p]['y']:.3f}")
+                
+                # Если известна точка to_p, но неизвестна from_p (обратное измерение)
+                if (coordinates.get(to_p, {}).get('x', 0) != 0 or 
+                    coordinates.get(to_p, {}).get('y', 0) != 0):
+                    if coordinates.get(from_p, {}).get('x', 0) == 0 and \
+                       coordinates.get(from_p, {}).get('y', 0) == 0:
+                        # Нужен обратный азимут
+                        azimuth = self._find_azimuth(direction_obs, from_p, to_p, coordinates)
+                        
+                        if azimuth is not None:
+                            # Обратный азимут
+                            back_azimuth = azimuth + np.pi
+                            if back_azimuth > 2 * np.pi:
+                                back_azimuth -= 2 * np.pi
+                            
+                            dx = dist * np.cos(back_azimuth)
+                            dy = dist * np.sin(back_azimuth)
+                            coordinates[from_p]['x'] = coordinates[to_p]['x'] + dx
+                            coordinates[from_p]['y'] = coordinates[to_p]['y'] + dy
+                            
+                            # Обновляем объект точки если есть ссылка
+                            if '_point_obj' in coordinates.get(from_p, {}):
+                                pt = coordinates[from_p]['_point_obj']
+                                if hasattr(pt, 'set_approx_coords'):
+                                    pt.set_approx_coords(coordinates[from_p]['x'], 
+                                                        coordinates[from_p]['y'])
+                            
+                            coords_computed = True
+                            self.logger.info(f"Вычислены координаты {from_p} из {to_p}: "
+                                           f"X={coordinates[from_p]['x']:.3f}, Y={coordinates[from_p]['y']:.3f}")
+            
+            if not coords_computed:
+                break
+        
+        # Удаляем временные ссылки на объекты
+        for coord in coordinates.values():
+            coord.pop('_point_obj', None)
+
+    def _find_azimuth(self, direction_obs: List[Any], from_p: str, to_p: str,
+                      coordinates: Dict[str, Dict[str, Any]]) -> Optional[float]:
+        """
+        Поиск азимута направления от from_p к to_p.
+        """
+        for obs in direction_obs:
+            if self._get_from_point(obs) == from_p and self._get_to_point(obs) == to_p:
+                # Для CombinedObservation используем horizontal_angle
+                if hasattr(obs, 'horizontal_angle') and obs.horizontal_angle is not None:
+                    angle = obs.horizontal_angle
+                else:
+                    angle = self._get_value(obs)
+                
+                angle_unit = getattr(obs, 'angle_unit', 'degrees')
+                
+                # Конвертация в радианы
+                if angle_unit == 'degrees':
+                    return np.deg2rad(angle)
+                elif angle_unit == 'gons':
+                    return angle * np.pi / 200.0
+                elif angle_unit == 'radians':
+                    return angle
+                else:
+                    return np.deg2rad(angle)
+        
+        # Если нет измеренного направления, вычисляем из координат других точек
+        # Это упрощенный подход - в реальности нужен более сложный алгоритм
+        return None
 
     def run_all_stages(self, observations: List[Any], points: Optional[Union[List[Dict[str, Any]], Dict[str, Any]]] = None,
                        config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
