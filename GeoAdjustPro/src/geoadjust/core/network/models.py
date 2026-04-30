@@ -131,6 +131,7 @@ class CombinedObservation:
     zenith_angle: Optional[float] = None
     slope_distance: Optional[float] = None
     raw_line: Optional[str] = None
+    is_active: bool = True  # Добавлено для совместимости с фильтрацией
 
     def __post_init__(self):
         # Добавляем поле для совместимости с фильтрацией

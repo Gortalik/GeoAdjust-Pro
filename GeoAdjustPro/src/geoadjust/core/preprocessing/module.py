@@ -394,13 +394,32 @@ class PreprocessingModule:
         if not from_point.has_plan_coords():
             return None
         
-        # Поиск измерений между точками
-        distance_obs = None
-        direction_obs = None
-        zenith_obs = None
-        
-        for o in points.values():
-            pass  # Логика поиска измерений реализуется в основном алгоритме
+        # Обработка CombinedObservation
+        if hasattr(obs, 'obs_type') and obs.obs_type == 'combined':
+            # Получаем расстояние и горизонтальный угол из комбинированного измерения
+            distance = getattr(obs, 'slope_distance', None)
+            horizontal_angle = getattr(obs, 'horizontal_angle', None)
+            zenith_angle = getattr(obs, 'zenith_angle', None)
+            
+            if distance is None or horizontal_angle is None:
+                return None
+            
+            # Конвертируем горизонтальный угол в азимут (предполагаем, что это дирекционный угол)
+            azimuth = np.deg2rad(horizontal_angle)
+            
+            # Прямая геодезическая задача
+            x_new = from_point.x + distance * np.cos(azimuth)
+            y_new = from_point.y + distance * np.sin(azimuth)
+            
+            result = {'x': x_new, 'y': y_new}
+            
+            # Вычисление высоты если есть зенитный угол и высота исходной точки
+            if zenith_angle is not None and from_point.h is not None:
+                z = np.deg2rad(zenith_angle)
+                dh = distance * np.cos(z)  # Превышение
+                result['h'] = from_point.h + dh
+            
+            return result
         
         # Для расстояния используем прямую геодезическую задачу
         if hasattr(obs, 'value') and obs.obs_type in ['distance', 'slope_distance']:
