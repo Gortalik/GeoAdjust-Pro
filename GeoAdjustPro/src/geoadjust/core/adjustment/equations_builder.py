@@ -304,9 +304,14 @@ class EquationsBuilder:
         from_point = points[obs.from_point_id]
         to_point = points[obs.to_point_id]
         
-        # Проверяем, что координаты не None
+        # Проверяем, что координаты не None и не нулевые (для FREE точек)
         if from_point.x is None or from_point.y is None or to_point.x is None or to_point.y is None:
             self.logger.warning(f"Пропускаем измерение {obs.obs_id}: отсутствуют координаты точек {obs.from_point_id} или {obs.to_point_id}")
+            return [], [], 0.0
+        
+        # Проверка на нулевые координаты (типично для точек со статусом FREE)
+        if (from_point.x == 0.0 and from_point.y == 0.0) or (to_point.x == 0.0 and to_point.y == 0.0):
+            self.logger.warning(f"Пропускаем измерение {obs.obs_id}: нулевые координаты у точки {obs.from_point_id if from_point.x == 0.0 and from_point.y == 0.0 else obs.to_point_id}")
             return [], [], 0.0
         
         # Приближенные координаты
@@ -412,6 +417,16 @@ class EquationsBuilder:
         """
         from_point = points[obs.from_point_id]
         to_point = points[obs.to_point_id]
+        
+        # Проверяем, что координаты не None и не нулевые (для FREE точек)
+        if from_point.x is None or from_point.y is None or to_point.x is None or to_point.y is None:
+            self.logger.warning(f"Пропускаем измерение {obs.obs_id}: отсутствуют координаты точек {obs.from_point_id} или {obs.to_point_id}")
+            return [], [], 0.0
+        
+        # Проверка на нулевые координаты (типично для точек со статусом FREE)
+        if (from_point.x == 0.0 and from_point.y == 0.0) or (to_point.x == 0.0 and to_point.y == 0.0):
+            self.logger.warning(f"Пропускаем измерение {obs.obs_id}: нулевые координаты у точки {obs.from_point_id if from_point.x == 0.0 and from_point.y == 0.0 else obs.to_point_id}")
+            return [], [], 0.0
         
         # Приближенные координаты
         x_i, y_i = from_point.x, from_point.y
@@ -661,6 +676,11 @@ class EquationsBuilder:
         """
         from_point = points[obs.from_point_id]
         to_point = points[obs.to_point_id]
+        
+        # Проверяем, что координаты не None
+        if from_point.x is None or from_point.y is None or to_point.x is None or to_point.y is None:
+            self.logger.warning(f"Пропускаем измерение {obs.obs_id}: отсутствуют плановые координаты точек {obs.from_point_id} или {obs.to_point_id}")
+            return [], [], 0.0
         
         # Приближенные координаты
         x_i, y_i = from_point.x, from_point.y
