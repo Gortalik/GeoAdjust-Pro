@@ -3,11 +3,35 @@
 Делегаты для отображения визуальных индикаторов в таблицах
 """
 
-from PyQt5.QtWidgets import QStyledItemDelegate, QWidget, QHBoxLayout, QLabel, QTableView
+from PyQt5.QtWidgets import QStyledItemDelegate, QWidget, QHBoxLayout, QLabel, QTableView, QComboBox
 from PyQt5.QtCore import Qt, QRect, QSize
-from PyQt5.QtGui import QFont, QPainter, QPalette
+from PyQt5.QtGui import QFont, QPainter, QPalette, QColor
 from typing import Optional, Any
 from geoadjust.gui.visual_indicators import VisualIndicator
+
+
+class ComboBoxDelegate(QStyledItemDelegate):
+    """Делегат для редактирования через QComboBox"""
+
+    def __init__(self, items, parent=None):
+        super().__init__(parent)
+        self.items = items
+
+    def createEditor(self, parent, option, index):
+        combo = QComboBox(parent)
+        combo.addItems(self.items)
+        return combo
+
+    def setEditorData(self, editor, index):
+        value = index.data(Qt.EditRole)
+        if value in self.items:
+            editor.setCurrentText(value)
+        else:
+            editor.setCurrentIndex(0)
+
+    def setModelData(self, editor, model, index):
+        value = editor.currentText()
+        model.setData(index, value, Qt.EditRole)
 
 
 class PointTypeDelegate(QStyledItemDelegate):

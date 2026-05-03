@@ -123,6 +123,140 @@ class DataAdapter:
         return points_dict
     
     @staticmethod
+    def normalize_project_data(raw_points, raw_observations):
+        """
+        Нормализация данных проекта в ожидаемые форматы для уравнивания
+
+        Преобразует:
+        - raw_points: List[Dict] -> Dict[str, NetworkPoint]
+        - raw_observations: List[Dict] -> List[Observation]
+
+        Параметры:
+        -----------
+        raw_points : List[Dict] или Dict[str, Any]
+            Сырые данные точек от парсера
+        raw_observations : List[Any]
+            Сырые данные наблюдений от парсера
+
+        Возвращает:
+        ------------
+        Tuple[Dict[str, NetworkPoint], List[Observation]]
+            Нормализованные точки и наблюдения
+        """
+        # Преобразование точек в Dict[str, NetworkPoint]
+        points_dict = {}
+        if isinstance(raw_points, list):
+            # points - список словарей
+            for p in raw_points:
+                if isinstance(p, dict):
+                    point_id = p.get('point_id') or p.get('id', 'unknown')
+                    point_id_normalized = str(point_id).upper()
+
+                    # Определяем тип координат
+                    point_type = p.get('point_type', 'FREE').upper()
+                    if point_type == 'FIXED':
+                        coord_type = 'FIXED'
+                    elif point_type in ['STATION', 'APPROXIMATE']:
+                        coord_type = 'APPROXIMATE'
+                    else:
+                        coord_type = 'FREE'
+
+                    # Получаем координаты
+                    x = p.get('x')
+                    y = p.get('y')
+                    h = p.get('h')
+
+                    point = NetworkPoint(
+                        point_id=point_id_normalized,
+                        coord_type=coord_type,
+                        x=float(x) if x is not None else None,
+                        y=float(y) if y is not None else None,
+                        h=float(h) if h is not None else None
+                    )
+                    points_dict[point_id_normalized] = point
+                else:
+                    # points - объект NetworkPoint
+                    point_id = getattr(p, 'point_id', getattr(p, 'id', 'unknown'))
+                    points_dict[str(point_id).upper()] = p
+        else:
+            # points - словарь
+            for point_id, point in raw_points.items():
+                if isinstance(point, dict):
+                    point_id_normalized = str(point_id).upper()
+                    points_dict[point_id_normalized] = NetworkPoint(
+                        point_id=point_id_normalized,
+                        coord_type=point.get('coord_type', 'FREE'),
+                        x=point.get('x'),
+                        y=point.get('y'),
+                        h=point.get('h')
+                    )
+                else:
+                    points_dict[str(point_id).upper()] = point
+
+        # Валидация и фильтрация наблюдений
+        valid_obs = []
+        for obs in raw_observations:
+            # Обработка GSIObservation объектов
+            if hasattr(obs, 'from_point') and hasattr(obs, 'to_point'):
+                # GSIObservation объект
+                from_point_id = str(obs.from_point).upper()
+                to_point_id = str(obs.to_point).upper()
+
+                if from_point_id in points_dict and to_point_id in points_dict:
+                    observation = Observation(
+                        obs_id=getattr(obs, 'obs_id', getattr(obs, 'station_session_id', f'OBS_{len(valid_obs)}')),
+                        obs_type=getattr(obs, 'obs_type', 'unknown'),
+                        from_setup_id=getattr(obs, 'station_session_id', f'SETUP_{from_point_id}'),
+                        from_point_id=from_point_id,
+                        to_point_id=to_point_id,
+                        value=getattr(obs, 'value', 0.0),
+                        sigma_apriori=getattr(obs, 'sigma_apriori', None),
+                        is_active=getattr(obs, 'is_active', True)
+                    )
+                    valid_obs.append(observation)
+                else:
+                    logger.debug(f"GSI измерение ссылается на несуществующий пункт: {from_point_id} -> {to_point_id}")
+
+            elif isinstance(obs, dict):
+                # Конвертация dict в Observation если нужно
+                from_point_id = obs.get('from_point_id') or obs.get('from_point')
+                to_point_id = obs.get('to_point_id') or obs.get('to_point')
+
+                if from_point_id and to_point_id:
+                    from_point_id = str(from_point_id).upper()
+                    to_point_id = str(to_point_id).upper()
+
+                    if from_point_id in points_dict and to_point_id in points_dict:
+                        observation = Observation(
+                            obs_id=obs.get('obs_id', obs.get('id', f'OBS_{len(valid_obs)}')),
+                            obs_type=obs.get('obs_type', obs.get('type', 'unknown')),
+                            from_setup_id=obs.get('from_setup_id', f'SETUP_{from_point_id}'),
+                            from_point_id=from_point_id,
+                            to_point_id=to_point_id,
+                            value=obs.get('value', 0.0),
+                            is_active=obs.get('is_active', True)
+                        )
+                        valid_obs.append(observation)
+                    else:
+                        logger.warning(f"Измерение ссылается на несуществующий пункт: {from_point_id} -> {to_point_id}")
+            else:
+                # Уже объект Observation
+                if hasattr(obs, 'from_point_id') and hasattr(obs, 'to_point_id'):
+                    from_point_id = str(obs.from_point_id).upper()
+                    to_point_id = str(obs.to_point_id).upper()
+
+                    if from_point_id in points_dict and to_point_id in points_dict:
+                        # Убеждаемся что point_id в верхнем регистре
+                        obs.from_point_id = from_point_id
+                        obs.to_point_id = to_point_id
+                        valid_obs.append(obs)
+                    else:
+                        logger.warning(f"Измерение ссылается на несуществующий пункт: {from_point_id} -> {to_point_id}")
+
+        logger.info(f"Нормализовано: {len(points_dict)} точек, {len(valid_obs)} наблюдений")
+        return points_dict, valid_obs
+
+    @staticmethod
     def convert_observations(obs_data: List[Any]) -> List[Observation]:
         """
         Конвертация наблюдений из парсера в список Observation

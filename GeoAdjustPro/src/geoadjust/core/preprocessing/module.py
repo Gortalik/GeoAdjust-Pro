@@ -698,16 +698,31 @@ class PreprocessingModule:
 
         return results
 
-    def run_preprocessing(self, observations: List[Any], points: Optional[Union[List[Dict[str, Any]], Dict[str, Any]]] = None,
-                          config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def process(self, observations: List[Any], points: Optional[Union[List[Dict[str, Any]], Dict[str, Any]]] = None,
+                config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Упрощённый запуск предобработки для совместимости с GUI
-        
+        Фасад для совместимости с старым кодом и GUI
+
         Параметры:
         - observations: список измерений
         - points: словарь пунктов (опционально)
         - config: конфигурация (опционально)
-        
+
+        Возвращает:
+        - Словарь с результатами предобработки
+        """
+        return self.run_all_stages(observations=observations, points=points, config=config)
+
+    def run_preprocessing(self, observations: List[Any], points: Optional[Union[List[Dict[str, Any]], Dict[str, Any]]] = None,
+                           config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Упрощённый запуск предобработки для совместимости с GUI
+
+        Параметры:
+        - observations: список измерений
+        - points: словарь пунктов (опционально)
+        - config: конфигурация (опционально)
+
         Возвращает:
         - Словарь с результатами предобработки
         """
@@ -715,5 +730,5 @@ class PreprocessingModule:
             points = {}
         if config is None:
             config = {}
-        
+
         return self.run_all_stages(observations, points, config)

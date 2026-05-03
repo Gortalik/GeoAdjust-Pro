@@ -536,8 +536,7 @@ def main():
     tester = GeoAdjustProTester()
     success = tester.run_full_test()
 
-    print("
-" + "=" * 80)
+    print("\n" + "=" * 80)
     if success:
         print("РАБОЧИЙ ПРОТОТИП GeoAdjust Pro ГОТОВ!")
         print("Все основные модули протестированы и работают корректно.")

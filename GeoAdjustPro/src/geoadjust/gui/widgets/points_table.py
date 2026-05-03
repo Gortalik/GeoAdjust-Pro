@@ -13,7 +13,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon
 
 # Импорт визуальных делегатов
-from geoadjust.gui.delegates.visual_delegates import PointTypeDelegate
+from geoadjust.gui.delegates.visual_delegates import PointTypeDelegate, ComboBoxDelegate
 
 
 class ManualPointInputDialog(QDialog):
@@ -222,12 +222,15 @@ class PointsTableView(QTableView):
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
         
-        # Двойной клик
-        self.doubleClicked.connect(self._on_double_click)
-        
         # Модель данных
         self._setup_model()
-    
+
+        # Разрешить редактирование двойным кликом
+        self.setEditTriggers(QTableView.DoubleClicked)
+
+        # Сигнал выбора при изменении selection
+        self.selectionModel().selectionChanged.connect(self._on_selection_changed)
+
     def _setup_model(self):
         """Настройка модели данных"""
         self.model = QStandardItemModel(0, 9, self)  # Добавлена колонка для статуса
@@ -239,6 +242,7 @@ class PointsTableView(QTableView):
 
         # Настройка делегатов для визуальных индикаторов
         self.setItemDelegateForColumn(2, PointTypeDelegate(self))  # Колонка "Тип"
+        self.setItemDelegateForColumn(3, ComboBoxDelegate(["working", "initial"], self))  # Колонка "Статус"
     
     def _show_context_menu(self, position):
         """Показ контекстного меню"""
@@ -266,8 +270,17 @@ class PointsTableView(QTableView):
         
         menu.exec_(self.mapToGlobal(position))
     
+    def _on_selection_changed(self, selected, deselected):
+        """Обработка изменения выбора"""
+        indexes = selected.indexes()
+        if indexes:
+            row = indexes[0].row()
+            point_id = self.model.index(row, 0).data()
+            if point_id:
+                self.point_selected.emit(point_id)
+
     def _on_double_click(self, index):
-        """Обработка двойного клика"""
+        """Обработка двойного клика (для совместимости)"""
         row = index.row()
         if row >= 0:
             point_id = self.model.index(row, 0).data()

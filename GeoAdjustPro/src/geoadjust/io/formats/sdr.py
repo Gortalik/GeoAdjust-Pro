@@ -136,13 +136,15 @@ class SDRParser:
 
                     # Добавляем точку в список
                     if point_id not in points:
-                        # Станции помечаются как FREE (свободные точки)
-                        # Но координаты из файла используются как начальные приближения
+                        # Определяем статус точки на основе наличия координат
+                        has_coords = (setup_data.get('x') is not None and
+                                    setup_data.get('y') is not None)
+
                         points[point_id] = {
                             'point_id': point_id,
                             'coord_type': 'FREE',  # Станции - свободные точки
-                            'plan_status': 'working',   # По умолчанию рабочий план
-                            'height_status': 'working', # По умолчанию рабочая высота
+                            'plan_status': 'working',   # Все точки - рабочие (определяемые)
+                            'height_status': 'working', # Все точки - рабочие (определяемые)
                             'x': setup_data.get('x'),  # Начальные приближения из файла
                             'y': setup_data.get('y'),
                             'h': setup_data.get('h')

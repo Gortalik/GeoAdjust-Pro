@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 import logging
 
+from ...core.network.models import Observation
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -449,18 +451,24 @@ class GSIParser:
                                 word_code = 0
                                 remaining = ''
 
-                        # Определяем десятичные знаки
-                        if '...' in remaining:
-                            spec_part = remaining.split('...', 1)[1]
-                            decimal_digits = int(spec_part) if spec_part.isdigit() else 0
-                        elif '..' in remaining:
-                            spec_part = remaining.split('..', 1)[1]
-                            decimal_digits = int(spec_part) if spec_part.isdigit() else 0
-                        elif '.' in remaining:
-                            spec_part = remaining.split('.', 1)[1]
-                            decimal_digits = int(spec_part) if spec_part.isdigit() else len(spec_part)
+                        # Определяем decimal_digits по типу слова (для Leica GSI)
+                        if word_code in [11, 12, 21, 22, 31]:  # Углы в градусах
+                            decimal_digits = 4
+                        elif word_code in [32, 331, 332, 333, 83, 84, 85, 573, 574, 15, 16, 17, 18, 33, 34, 35, 36, 41, 42, 43]:  # Координаты, расстояния, высоты в мм
+                            decimal_digits = 3
                         else:
-                            decimal_digits = 0
+                            # Для остальных, пытаемся из спецификатора
+                            if '...' in remaining:
+                                spec_part = remaining.split('...', 1)[1]
+                                decimal_digits = int(spec_part) if spec_part.isdigit() else 0
+                            elif '..' in remaining:
+                                spec_part = remaining.split('..', 1)[1]
+                                decimal_digits = int(spec_part) if spec_part.isdigit() else 0
+                            elif '.' in remaining:
+                                spec_part = remaining.split('.', 1)[1]
+                                decimal_digits = int(spec_part) if spec_part.isdigit() else len(spec_part)
+                            else:
+                                decimal_digits = 0
 
                         # Разбираем значение и идентификатор
                         # Идентификатор начинается с буквы после цифр
@@ -784,6 +792,51 @@ class GSIParser:
             # Добавляем точку в список точек хода
             if target_name not in current_traverse.points_list:
                 current_traverse.points_list.append(target_name)
+
+    def _create_observations(self, gsi_records: List[GSIRecord]) -> List[Observation]:
+        """
+        Конвертация GSIRecord в объекты Observation для ядра
+
+        Параметры:
+        -----------
+        gsi_records : List[GSIRecord]
+            Записи измерений GSI
+
+        Возвращает:
+        ------------
+        List[Observation]
+            Список объектов Observation
+        """
+        from geoadjust.core.network.models import Observation
+
+        obs_list = []
+        for rec in gsi_records:
+            if rec.reading_type in ('задняя', 'передняя'):
+                # Создаём измерение превышения для нивелирования
+                obs_list.append(Observation(
+                    obs_id=f"DH_{rec.point_id}_{rec.section_id}",
+                    obs_type='height_diff',
+                    from_point_id=rec.station_id,
+                    to_point_id=rec.point_id,
+                    value=rec.dh,
+                    sigma_apriori=0.001,  # типичная точность нивелирования
+                    is_active=True
+                ))
+            elif rec.reading_type == 'промежуточный':
+                # Для промежуточных измерений - расстояние
+                if rec.distance > 0:
+                    obs_list.append(Observation(
+                        obs_id=f"DIST_{rec.point_id}_{rec.section_id}",
+                        obs_type='distance',
+                        from_point_id=rec.station_id,
+                        to_point_id=rec.point_id,
+                        value=rec.distance,
+                        sigma_apriori=0.005,  # типичная точность расстояния
+                        is_active=True
+                    ))
+
+        logger.info(f"Создано {len(obs_list)} объектов Observation из {len(gsi_records)} GSIRecord")
+        return obs_list
 
     def _process_tacheometric_measurements(self, words, line_num, observations, station_sessions, current_station):
         """Обработка тахеометрических измерений (направления, расстояния, углы)"""

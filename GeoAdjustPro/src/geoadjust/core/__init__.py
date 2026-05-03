@@ -14,6 +14,7 @@ from .network.models import NetworkPoint, Observation
 from .preprocessing.module import PreprocessingModule
 
 # Эти модули требуют sksparse, импортируем с обработкой ошибок
+ADJUSTMENT_AVAILABLE = False
 try:
     from .adjustment.engine import AdjustmentEngine
     from .adjustment.equations_builder import EquationsBuilder
@@ -25,16 +26,26 @@ except ImportError as e:
     WeightBuilder = None
     ADJUSTMENT_AVAILABLE = False
     import warnings
-    warnings.warn(f"Модули adjustment недоступны: {e}. Установите scikit-sparse.")
+    warnings.warn(f"Модули adjustment недоступны: {e}. Установите scikit-sparse или scipy.sparse.")
 
+# ProcessingPipeline может требовать seaborn для графиков
+PROCESSING_PIPELINE_AVAILABLE = False
 try:
     from .processing_pipeline import ProcessingPipeline
     PROCESSING_PIPELINE_AVAILABLE = True
 except ImportError as e:
     ProcessingPipeline = None
     PROCESSING_PIPELINE_AVAILABLE = False
-    import warnings
-    warnings.warn(f"ProcessingPipeline недоступен: {e}")
+    # Проверяем, не из-за seaborn ли ошибка
+    try:
+        import seaborn
+        # Если seaborn есть, но импорт ProcessingPipeline всё равно fails - другая причина
+        import warnings
+        warnings.warn(f"ProcessingPipeline недоступен: {e}")
+    except ImportError:
+        # seaborn не установлен - это нормально, ProcessingPipeline просто не будет доступен
+        import warnings
+        warnings.warn(f"ProcessingPipeline недоступен: отсутствует seaborn. Установите для графиков.")
 
 __all__ = [
     'NetworkPoint',

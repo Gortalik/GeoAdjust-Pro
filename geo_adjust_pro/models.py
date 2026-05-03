@@ -32,6 +32,9 @@ class NetworkPoint:
         if self.z is not None and self.h is None:
             self.h = self.z
     
+    def __repr__(self):
+        return f"{{'point_id': '{self.id}', 'point_type': 'station', 'coord_type': 'FREE', 'plan_status': '{self.plan_status}', 'height_status': '{self.height_status}', 'x': {self.x}, 'y': {self.y}, 'h': {self.z}}}"
+    
     @property
     def X(self):
         return self.x

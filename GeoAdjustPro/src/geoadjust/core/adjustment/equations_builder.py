@@ -79,6 +79,18 @@ class EquationsBuilder:
             raise ValueError("Список измерений пуст")
         if not points:
             raise ValueError("Словарь пунктов пуст")
+
+        # Валидация типов данных
+        assert isinstance(points, dict), "points должен быть Dict[str, NetworkPoint]"
+        assert isinstance(observations, list), "observations должен быть List[Observation]"
+
+        # Проверка что все элементы правильного типа
+        for obs in observations:
+            if not hasattr(obs, 'obs_type'):
+                raise ValueError(f"Неверный тип измерения: {type(obs)}. Ожидается Observation.")
+        for point_id, point in points.items():
+            if not hasattr(point, 'point_id'):
+                raise ValueError(f"Неверный тип точки {point_id}: {type(point)}. Ожидается NetworkPoint.")
         
         # Определение размерности сети (2D или 3D)
         has_heights = any(p.h is not None for p in points.values())
@@ -130,7 +142,7 @@ class EquationsBuilder:
                     indices, coeffs, ell = self._build_distance_equation(
                         obs, points, unknown_indices, num_unknowns_per_point
                     )
-                elif obs.obs_type == 'height_diff':
+                elif obs.obs_type in ['height_diff', 'leveling_height_diff']:
                     indices, coeffs, ell = self._build_height_diff_equation(
                         obs, points, unknown_indices, num_unknowns_per_point
                     )

@@ -163,7 +163,7 @@ class WeightBuilder:
         elif obs.obs_type == 'distance':
             sigma = self._calculate_distance_sigma(instrument, obs, points)
         
-        elif obs.obs_type == 'height_diff':
+        elif obs.obs_type in ['height_diff', 'leveling_height_diff']:
             sigma = self._calculate_leveling_sigma(instrument, obs, points)
         
         elif obs.obs_type == 'gnss_vector':
