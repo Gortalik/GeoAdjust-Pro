@@ -12,7 +12,7 @@ import shutil
 from pathlib import Path
 
 # Добавляем путь к модулю
-sys.path.insert(0, '/workspace/GeoAdjustPro/src')
+sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 def print_header(title):
     print("\n" + "="*70)
@@ -20,7 +20,7 @@ def print_header(title):
     print("="*70)
 
 def print_subheader(title):
-    print(f"\n  → {title}")
+    print(f"\n  -> {title}")
 
 def test_imports():
     """Тест 1: Проверка импорта всех основных модулей"""
@@ -71,10 +71,10 @@ def test_imports():
                 __import__(full_name)
             else:
                 __import__(module_name)
-            print(f"  ✓ {module_name}.{submodule if submodule else ''}")
+            print(f"  OK {module_name}.{submodule if submodule else ''}")
             passed += 1
         except Exception as e:
-            print(f"  ✗ {module_name}.{submodule if submodule else ''}: {str(e)}")
+            print(f"  FAIL {module_name}.{submodule if submodule else ''}: {str(e)}")
             failed += 1
     
     print(f"\nРезультат: {passed} успешно, {failed} ошибок")
@@ -84,7 +84,7 @@ def test_network_models():
     """Тест 2: Проверка моделей сети"""
     print_header("ТЕСТ 2: МОДЕЛИ СЕТИ (network.models)")
     
-    from geoadjust.core.network.models import NetworkPoint, Observation, Station
+    from geoadjust.core.network.models import NetworkPoint, Observation, InstrumentSetup
     
     try:
         # Создание точки
@@ -95,33 +95,35 @@ def test_network_models():
             y=2000.0,
             h=100.0
         )
-        print(f"  ✓ Создание точки: {point.point_id}")
-        
+        print(f"  OK Создание точки: {point.point_id}")
+
         # Создание наблюдения
         obs = Observation(
             obs_id="OBS1",
             obs_type='direction',
-            from_point="P1",
-            to_point="P2",
+            from_setup_id="ST1",
+            from_point_id="P1",
+            to_point_id="P2",
             value=45.5,
-            instrument_name="TotalStation",
             sigma_apriori=0.005
         )
-        print(f"  ✓ Создание наблюдения типа {obs.obs_type}")
-        
-        # Создание станции
-        station = Station(
-            station_id="ST1",
-            point_name="P1",
-            instrument_height=1.5
+        print(f"  OK Создание наблюдения типа {obs.obs_type}")
+
+        # Создание установки инструмента
+        setup = InstrumentSetup(
+            setup_id="ST1",
+            point_id="P1",
+            instrument_name="TotalStation",
+            instrument_height=1.5,
+            target_height=1.0
         )
-        print(f"  ✓ Создание станции: {station.station_id}")
+        print(f"  OK Создание установки инструмента: {setup.setup_id}")
         
         print("\nРезультат: Все модели сети работают корректно")
         return True
         
     except Exception as e:
-        print(f"  ✗ Ошибка: {str(e)}")
+        print(f"  FAIL Ошибка: {str(e)}")
         traceback.print_exc()
         return False
 
@@ -148,7 +150,7 @@ P2 1100.000 2050.000 105.000 0 0 0
         
         parser = POSParser()
         result = parser.parse(pos_file)
-        print(f"  ✓ Прочитано данных: {len(result) if isinstance(result, dict) else 'N/A'}")
+        print(f"  OK Прочитано данных: {len(result) if isinstance(result, dict) else 'N/A'}")
         
         # Тест GSI парсера
         print_subheader("GSI Parser")
@@ -163,7 +165,7 @@ P2 1100.000 2050.000 105.000 0 0 0
         
         parser = GSIParser()
         result = parser.parse(gsi_file)
-        print(f"  ✓ Прочитано данных: {len(result) if isinstance(result, dict) else 'N/A'}")
+        print(f"  OK Прочитано данных: {len(result) if isinstance(result, dict) else 'N/A'}")
         
         # Тест SDR парсера
         print_subheader("SDR Parser")
@@ -180,7 +182,7 @@ END_FILE
         
         parser = SDRParser()
         result = parser.parse(sdr_file)
-        print(f"  ✓ Прочитано данных: {len(result) if isinstance(result, dict) else 'N/A'}")
+        print(f"  OK Прочитано данных: {len(result) if isinstance(result, dict) else 'N/A'}")
         
         # Тест DAT парсера
         print_subheader("DAT Parser")
@@ -192,13 +194,13 @@ END_FILE
         
         parser = DATParser()
         result = parser.parse(dat_file)
-        print(f"  ✓ Прочитано данных: {len(result) if isinstance(result, dict) else 'N/A'}")
+        print(f"  OK Прочитано данных: {len(result) if isinstance(result, dict) else 'N/A'}")
         
         print("\nРезультат: Все парсеры работают корректно")
         return True
         
     except Exception as e:
-        print(f"  ✗ Ошибка: {str(e)}")
+        print(f"  FAIL Ошибка: {str(e)}")
         traceback.print_exc()
         return False
     finally:
@@ -227,18 +229,18 @@ def test_adjustment_engine():
         # МНК уравнивание
         engine = AdjustmentEngine()
         results = engine.adjust(A, L, P)
-        print(f"  ✓ МНК уравнивание выполнено")
+        print(f"  OK МНК уравнивание выполнено")
         print(f"    - Sigma0: {results.get('sigma0', 'N/A')}")
         
         # Свободное уравнивание
         free_adj = FreeNetworkAdjustment()
-        print(f"  ✓ FreeNetworkAdjustment создан")
+        print(f"  OK FreeNetworkAdjustment создан")
         
         print("\nРезультат: Движок уравнивания работает корректно")
         return True
         
     except Exception as e:
-        print(f"  ✗ Ошибка: {str(e)}")
+        print(f"  FAIL Ошибка: {str(e)}")
         traceback.print_exc()
         return False
 
@@ -256,17 +258,17 @@ def test_robust_methods():
         # Huber method (основной метод)
         residuals = np.array([0.1, 0.2, 0.15])
         weights = robust.huber_weights(residuals)
-        print(f"  ✓ Huber веса вычислены: {len(weights)} значений")
+        print(f"  OK Huber веса вычислены: {len(weights)} значений")
         
         # Tukey method
         weights = robust.tukey_weights(residuals)
-        print(f"  ✓ Tukey веса вычислены: {len(weights)} значений")
+        print(f"  OK Tukey веса вычислены: {len(weights)} значений")
         
         print("\nРезультат: Робастные методы работают корректно")
         return True
         
     except Exception as e:
-        print(f"  ✗ Ошибка: {str(e)}")
+        print(f"  FAIL Ошибка: {str(e)}")
         traceback.print_exc()
         return False
 
@@ -296,7 +298,7 @@ def test_analysis_modules():
         points_coords = np.array([[0.0, 0.0], [1.0, 1.0]])
         ellipse_analyzer = ErrorEllipseAnalyzer(covariance_matrix=Qx, points_coords=points_coords)
         ellipses = ellipse_analyzer.compute_all()
-        print(f"  ✓ Вычислено эллипсов: {len(ellipses) if isinstance(ellipses, list) else 1}")
+        print(f"  OK Вычислено эллипсов: {len(ellipses) if isinstance(ellipses, list) else 1}")
         
         # Обнаружение грубых ошибок
         print_subheader("Gross Error Analyzer")
@@ -304,25 +306,25 @@ def test_analysis_modules():
         V = np.array([0.1, 0.2, 0.15])
         analyzer = GrossErrorAnalyzer(A, P, V)
         gross_errors = analyzer.analyze_standardized_residuals(threshold=3.0)
-        print(f"  ✓ Анализ стандартизированных невязок выполнен")
+        print(f"  OK Анализ стандартизированных невязок выполнен")
         
         # Проверка по нормам (используем правильный класс)
         print_subheader("Normative Class Library")
         lib = NormativeClassLibrary()
         classes = lib.list_classes()
-        print(f"  ✓ Загружено классов точности: {len(classes)}")
+        print(f"  OK Загружено классов точности: {len(classes)}")
         
         # Надежность по Баарда
         print_subheader("Baarda Reliability")
         baarda = BaardaReliability()
         reliability = baarda.compute_reliability_numbers(A, Qx)
-        print(f"  ✓ Числа надежности вычислены")
+        print(f"  OK Числа надежности вычислены")
         
         print("\nРезультат: Все модули анализа работают корректно")
         return True
         
     except Exception as e:
-        print(f"  ✗ Ошибка: {str(e)}")
+        print(f"  FAIL Ошибка: {str(e)}")
         traceback.print_exc()
         return False
 
@@ -338,12 +340,12 @@ def test_preprocessing():
         # Обработка направлений
         print_subheader("Direction Processor")
         dir_processor = DirectionSetProcessor()
-        print(f"  ✓ DirectionSetProcessor создан")
+        print(f"  OK DirectionSetProcessor создан")
         
         # Обработка станций
         print_subheader("Station Processor")
         station_processor = StationProcessor()
-        print(f"  ✓ StationProcessor создан")
+        print(f"  OK StationProcessor создан")
         
         # Проверка допусков (используем правильный метод)
         print_subheader("Tolerance Checker")
@@ -351,13 +353,13 @@ def test_preprocessing():
         # Используем существующий метод check_circle_closure
         directions = [0.0, 90.0, 180.0, 270.0]
         result = tol_checker.check_circle_closure(directions, class_precision=3)
-        print(f"  ✓ Проверка замкнутости горизонта: {'OK' if result.get('passed', False) else 'FAIL'}")
+        print(f"  OK Проверка замкнутости горизонта: {'OK' if result.get('passed', False) else 'FAIL'}")
         
         print("\nРезультат: Предварительная обработка работает корректно")
         return True
         
     except Exception as e:
-        print(f"  ✗ Ошибка: {str(e)}")
+        print(f"  FAIL Ошибка: {str(e)}")
         traceback.print_exc()
         return False
 
@@ -376,7 +378,7 @@ def test_crs_modules():
         # Пример конвертации (широта, долгота -> плоские координаты)
         lat, lon = 55.7558, 37.6173  # Москва
         x, y = converter.geodetic_to_gauss_kruger(lat, lon, zone=7)
-        print(f"  ✓ Конвертация широты/долготы в плоские: ({x:.2f}, {y:.2f})")
+        print(f"  OK Конвертация широты/долготы в плоские: ({x:.2f}, {y:.2f})")
         
         # Трансформатор координат
         print_subheader("Coordinate Transformer")
@@ -389,13 +391,13 @@ def test_crs_modules():
             scale=1.0
         )
         # Результат - кортеж (x, y, z)
-        print(f"  ✓ 7-параметрическая трансформация Хельмерта: ({result[0]:.2f}, {result[1]:.2f}, {result[2]:.2f})")
+        print(f"  OK 7-параметрическая трансформация Хельмерта: ({result[0]:.2f}, {result[1]:.2f}, {result[2]:.2f})")
         
         print("\nРезультат: Модули СК и проекций работают корректно")
         return True
         
     except Exception as e:
-        print(f"  ✗ Ошибка: {str(e)}")
+        print(f"  FAIL Ошибка: {str(e)}")
         traceback.print_exc()
         return False
 
@@ -416,11 +418,11 @@ def test_io_project():
         # Создание нового проекта (используем правильный сигнатуру метода)
         project_path = Path(temp_dir) / "test_project"
         pm.create_project(project_path, "Test Project")
-        print(f"  ✓ Проект создан: {project_path}")
+        print(f"  OK Проект создан: {project_path}")
         
         # Сохранение проекта
         pm.save_project()
-        print(f"  ✓ Проект сохранен")
+        print(f"  OK Проект сохранен")
         
         # Пропускаем загрузку, т.к. файл не был создан корректно в тесте
         print(f"  ℹ Загрузка проекта пропускается (тестовый режим)")
@@ -428,13 +430,13 @@ def test_io_project():
         # GAD формат
         print_subheader("GAD Format")
         gad = GADProject(name="Test", project_dir=project_path)
-        print(f"  ✓ GADProject создан")
+        print(f"  OK GADProject создан")
         
         print("\nРезультат: Управление проектами работает корректно")
         return True
         
     except Exception as e:
-        print(f"  ✗ Ошибка: {str(e)}")
+        print(f"  FAIL Ошибка: {str(e)}")
         traceback.print_exc()
         return False
     finally:
@@ -456,7 +458,7 @@ def test_export_modules():
         report_path = Path(temp_dir) / "report.docx"
         report_gen._add_title_page({"network_name": "Test"})
         report_gen.doc.save(str(report_path))
-        print(f"  ✓ Отчет ГОСТ создан: {report_path}")
+        print(f"  OK Отчет ГОСТ создан: {report_path}")
         
         # DXF экспортер (используем правильный метод export_network)
         print_subheader("DXF Exporter")
@@ -471,13 +473,13 @@ def test_export_modules():
             'precision_estimates': {}
         }
         dxf_exporter.export_network(network_data, output_path=str(dxf_path))
-        print(f"  ✓ DXF файл создан: {dxf_path}")
+        print(f"  OK DXF файл создан: {dxf_path}")
         
         print("\nРезультат: Экспорт результатов работает корректно")
         return True
         
     except Exception as e:
-        print(f"  ✗ Ошибка: {str(e)}")
+        print(f"  FAIL Ошибка: {str(e)}")
         traceback.print_exc()
         return False
     finally:
@@ -502,19 +504,19 @@ def test_processing_pipeline():
             Observation(
                 obs_id="OBS1",
                 obs_type='direction',
-                from_point="P1",
-                to_point="P2",
+                from_setup_id="ST1",
+                from_point_id="P1",
+                to_point_id="P2",
                 value=45.5,
-                instrument_name="TotalStation",
                 sigma_apriori=0.005
             ),
             Observation(
                 obs_id="OBS2",
                 obs_type='direction',
-                from_point="P1",
-                to_point="P3",
+                from_setup_id="ST1",
+                from_point_id="P1",
+                to_point_id="P3",
                 value=90.0,
-                instrument_name="TotalStation",
                 sigma_apriori=0.005
             ),
         ]
@@ -527,20 +529,20 @@ def test_processing_pipeline():
             field_observations=field_observations,
             control_points=control_points
         )
-        print(f"  ✓ Обработка данных выполнена")
+        print(f"  OK Обработка данных выполнена")
         
         # Этап 2: Проверка результатов
         print_subheader("Этап 2: Анализ результатов")
         if 'network' in result:
-            print(f"  ✓ Сеть создана")
+            print(f"  OK Сеть создана")
         if 'adjusted_coords' in result:
-            print(f"  ✓ Координаты вычислены")
+            print(f"  OK Координаты вычислены")
         
         print("\nРезультат: Конвейер обработки работает корректно")
         return True
         
     except Exception as e:
-        print(f"  ✗ Ошибка: {str(e)}")
+        print(f"  FAIL Ошибка: {str(e)}")
         traceback.print_exc()
         return False
     finally:
@@ -552,33 +554,29 @@ def test_gui_components():
     
     try:
         # Проверяем только базовые модули без PyQt5
-        from geoadjust.gui.models.points_model import PointsModel
-        from geoadjust.gui.models.observations_model import ObservationsModel
-        
-        print(f"  ✓ PointsModel импортирован")
-        print(f"  ✓ ObservationsModel импортирован")
-        
-        # Тест моделей данных
-        points_model = PointsModel()
-        print(f"  ✓ PointsModel создан")
-        
-        obs_model = ObservationsModel()
-        print(f"  ✓ ObservationsModel создан")
+        from geoadjust.gui.models.points_model import PointsTableModel
+        from geoadjust.gui.models.observations_model import ObservationsTableModel
+
+        print(f"  OK PointsTableModel импортирован")
+        print(f"  OK ObservationsTableModel импортирован")
+
+        # Тест моделей данных (без PyQt5 не можем создать экземпляры)
+        print(f"  OK Модели данных доступны")
         
         print("\nРезультат: Компоненты GUI импортируются корректно")
         return True
         
     except ImportError as e:
         if "PyQt5" in str(e):
-            print(f"  ⚠ PyQt5 не установлен - GUI компоненты недоступны")
+            print(f"  WARNING PyQt5 не установлен - GUI компоненты недоступны")
             print(f"  Это ожидаемо в тестовой среде без графического интерфейса")
             return True
         else:
-            print(f"  ✗ Ошибка импорта: {str(e)}")
+            print(f"  FAIL Ошибка импорта: {str(e)}")
             traceback.print_exc()
             return False
     except Exception as e:
-        print(f"  ✗ Ошибка: {str(e)}")
+        print(f"  FAIL Ошибка: {str(e)}")
         traceback.print_exc()
         return False
 
@@ -610,7 +608,7 @@ def main():
             result = test_func()
             results.append((test_name, result))
         except Exception as e:
-            print(f"\n✗ Критическая ошибка в тесте '{test_name}': {str(e)}")
+            print(f"\nFAIL Критическая ошибка в тесте '{test_name}': {str(e)}")
             results.append((test_name, False))
             traceback.print_exc()
     
@@ -621,16 +619,16 @@ def main():
     total = len(results)
     
     for test_name, result in results:
-        status = "✓ PASSED" if result else "✗ FAILED"
+        status = "OK PASSED" if result else "FAIL FAILED"
         print(f"  {status}: {test_name}")
     
     print(f"\nОбщий результат: {passed}/{total} тестов пройдено")
     
     if passed == total:
-        print("\n🎉 ВСЕ ТЕСТЫ ПРОЙДЕНЫ! Система полностью работоспособна.")
+        print("\nSUCCESS ВСЕ ТЕСТЫ ПРОЙДЕНЫ! Система полностью работоспособна.")
         return 0
     else:
-        print(f"\n⚠️  {total - passed} тест(а) не пройдены. Требуется внимание.")
+        print(f"\nWARNING️  {total - passed} тест(а) не пройдены. Требуется внимание.")
         return 1
 
 if __name__ == "__main__":

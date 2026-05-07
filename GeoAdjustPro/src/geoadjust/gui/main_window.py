@@ -535,12 +535,19 @@ class MainWindow(QMainWindow):
         self.left_panel_dock.visibilityChanged.connect(self._on_left_panel_dock_visibility_changed)
 
         # Подключаем сигналы от левой панели (с защитой от рекурсии)
+        print("DEBUG: Подключаю сигналы от левой панели")
         self.left_panel.station_selected.connect(self._on_station_selected_from_panel)
         self.left_panel.course_selected.connect(self._on_course_selected_from_panel)
+        self.left_panel.point_selected.connect(self._on_point_selected)
+        logger.info("Сигналы от левой панели подключены")
+        print("DEBUG: Сигналы от левой панели подключены")
 
         # Сохраняем ссылки для совместимости
         self.stations_content = self.left_panel.get_stations_content()
         self.points_table = self.left_panel.get_points_table()
+
+        print(f"DEBUG: points_table type: {type(self.points_table)}")
+        # properties_widget еще не создан на этом этапе
         
         # Окно "Измерения" - с вкладками по типам
         self.observations_dock = ObservationsDockWidget("Измерения", self)
@@ -565,19 +572,34 @@ class MainWindow(QMainWindow):
         self.log_dock.visibilityChanged.connect(self._on_log_dock_visibility_changed)
         
         # Окно "Свойства/История" - большое окно справа
+        print("DEBUG: Создаю окно Свойства/История")
         self.properties_dock = QDockWidget("Свойства", self)
         self.properties_dock.setObjectName("propertiesDock")
         from .components.history_widget import PropertiesHistoryTabWidget
+        print("DEBUG: Импортирую PropertiesHistoryTabWidget")
         self.properties_history = PropertiesHistoryTabWidget(self)
+        print("DEBUG: PropertiesHistoryTabWidget создан")
         self.properties_dock.setWidget(self.properties_history)
         self.addDockWidget(Qt.RightDockWidgetArea, self.properties_dock)
         self.properties_dock.setMinimumWidth(400)  # Увеличенная ширина
         self.properties_dock.setMinimumHeight(600)  # Увеличенная высота
         self.properties_dock.visibilityChanged.connect(self._on_properties_dock_visibility_changed)
-        
+        print("DEBUG: Окно Свойства/История добавлено в интерфейс")
+
         # Ссылки на вложенные виджеты для совместимости
         self.properties_widget = self.properties_history.properties_widget
         self.history_widget = self.properties_history.history_widget
+        print(f"DEBUG: properties_widget: {self.properties_widget}")
+        print(f"DEBUG: history_widget: {self.history_widget}")
+        print("DEBUG: Все виджеты созданы, подключаю сигналы свойств и истории")
+
+        # Подключаем сигналы свойств и истории
+        self.properties_widget.properties_changed.connect(self._on_properties_changed)
+        self.history_widget.undo_requested.connect(self._on_history_undo)
+        self.history_widget.redo_requested.connect(self._on_history_redo)
+        self.history_widget.jump_to_entry.connect(self._on_jump_to_entry)
+        logger.info("Сигналы свойств и истории подключены")
+        print("DEBUG: Сигналы свойств и истории подключены")
 
         # Данные ходов для левой панели
         self.leveling_courses = []
@@ -592,11 +614,7 @@ class MainWindow(QMainWindow):
         # Подключение сигналов выбора к виджету свойств
         self._connect_properties_signals()
 
-        # Временно отключим остальные сигналы для безопасности
-        # self.properties_widget.properties_changed.connect(self._on_properties_changed)
-        # self.history_widget.undo_requested.connect(self._on_history_undo)
-        # self.history_widget.redo_requested.connect(self._on_history_redo)
-        # self.history_widget.jump_to_entry.connect(self._on_jump_to_entry)
+        # Сигналы свойств и истории будут подключены после создания окна
     
     def _connect_properties_signals(self):
         """Подключение сигналов выбора к виджету свойств"""
@@ -659,24 +677,15 @@ class MainWindow(QMainWindow):
 
     def _on_point_selected(self, point_id: str):
         """Обработка выбора пункта"""
+        logger.info(f"Выбран пункт: {point_id}")
+        print(f"DEBUG: Сигнал _on_point_selected получен для пункта: {point_id}")
+        print(f"DEBUG: properties_widget: {self.properties_widget}")
+        print(f"DEBUG: properties_history: {self.properties_history}")
         self._show_point_properties(point_id)
 
-
-
-        # Автоматическое переключение на вкладку тахеометрии
-        # Принудительно переключимся на вкладку тахеометрии
-        if hasattr(self, 'observations_table') and hasattr(self.observations_table, 'tabs'):
-            for i in range(self.observations_table.tabs.count()):
-                tab_text = self.observations_table.tabs.tabText(i)
-                if "тахеометр" in tab_text.lower():
-                    self.observations_table.tabs.setCurrentIndex(i)
-                    break
-
         # Обновление статуса
-        station_name = session_id.split('_S')[0] if '_S' in session_id else session_id
-        self.statusBar().showMessage(f"Показаны измерения станции {station_name}", 3000)
-
-        logger.info(f"Выбрана станция: {session_id}")
+        self.statusBar().showMessage(f"Выбран пункт: {point_id}", 2000)
+        print(f"DEBUG: Статус обновлен: Выбран пункт {point_id}")
     
     def _on_points_selection_changed(self, selected, deselected):
         """Обработка изменения выбора в таблице пунктов"""
@@ -713,7 +722,9 @@ class MainWindow(QMainWindow):
     
     def _show_point_properties(self, point_id: str):
         """Отображение свойств пункта"""
+        logger.info(f"Показ свойств пункта: {point_id}")
         if not self.current_project or self._updating_properties:
+            logger.warning("Проект не загружен или обновление свойств заблокировано")
             return
         
         self._updating_properties = True
@@ -1928,18 +1939,27 @@ class MainWindow(QMainWindow):
     
     def _refresh_data_views(self):
         """Обновление всех представлений данных"""
+        print("DEBUG: _refresh_data_views вызван")
         if self.current_project:
+            print(f"DEBUG: Текущий проект: {self.current_project.name}")
             # Обновление таблицы пунктов
             points = self.current_project.get_points()
+            print(f"DEBUG: Пунктов в проекте: {len(points)}")
             if points and hasattr(self, 'points_table'):
+                print(f"DEBUG: Обновляю таблицу пунктов, points_table: {self.points_table}")
                 self.points_table.update_data(points)
+                print("DEBUG: Таблица пунктов обновлена")
 
             # Обновление таблицы измерений
             observations = self.current_project.get_observations()
+            print(f"DEBUG: Измерений в проекте: {len(observations)}")
             if observations and hasattr(self, 'observations_table'):
                 # Конвертируем словари обратно в объекты CombinedObservation
                 converted_observations = self._convert_observations_to_objects(observations)
                 self.observations_table.update_data(converted_observations)
+                print("DEBUG: Таблица измерений обновлена")
+        else:
+            print("DEBUG: Нет текущего проекта")
 
             # Обновление станций
             if hasattr(self.left_panel, 'update_stations'):

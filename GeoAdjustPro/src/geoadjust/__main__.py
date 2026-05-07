@@ -111,15 +111,18 @@ def main():
         from geoadjust.utils import get_resource_path, setup_logging
         
         # Настройка логирования
-        logger = setup_logging()
+        log_file = Path.cwd() / "geoadjust_debug.log"
+        logger = setup_logging(log_file=str(log_file))
         logger.info("=" * 60)
         logger.info("ЗАПУСК P-OF-GEO-MEAS")
         logger.info("=" * 60)
         logger.info(f"Версия Python: {sys.version}")
         logger.info(f"Платформа: {sys.platform}")
         logger.info(f"Текущая директория: {Path.cwd()}")
+        logger.info(f"Файл лога: {log_file}")
         logger.info("=" * 60)
-        print("Настройка логирования завершена")
+        print(f"Настройка логирования завершена. Лог: {log_file}")
+        print("=" * 60)
         print()
         
         try:
@@ -213,8 +216,56 @@ def main():
                     project_name=project_name
                 )
 
-                # Сохранение проекта для создания всех файлов
+                # Добавление тестовых данных для демонстрации
+                test_points = [
+                    {
+                        'id': 'P001',
+                        'name': 'Тестовый пункт 1',
+                        'type': 'FIXED',
+                        'status': 'working',
+                        'normative_class': 'Полигонометрия 4 класса',
+                        'x': 1000.0,
+                        'y': 2000.0,
+                        'h': 100.0
+                    },
+                    {
+                        'id': 'P002',
+                        'name': 'Тестовый пункт 2',
+                        'type': 'FREE',
+                        'status': 'working',
+                        'normative_class': 'Нивелирование I класса',
+                        'x': 1100.0,
+                        'y': 2100.0,
+                        'h': 101.0
+                    },
+                    {
+                        'id': 'P003',
+                        'name': 'Тестовый пункт 3',
+                        'type': 'APPROXIMATE',
+                        'status': 'initial',
+                        'normative_class': 'Нивелирование II класса',
+                        'x': 1200.0,
+                        'y': 2200.0,
+                        'h': 102.0
+                    }
+                ]
+
+                # Добавляем тестовые пункты в проект
+                for point_data in test_points:
+                    project.add_point(point_data)
+
+                # Сохраняем проект с тестовыми данными
+                print("DEBUG: Сохраняю проект с тестовыми данными")
+                points_before_save = project.get_points()
+                print(f"DEBUG: Пунктов перед сохранением: {len(points_before_save)}")
+                for i, p in enumerate(points_before_save):
+                    print(f"  {i}: {p.get('id')} - {p.get('name')}")
+
                 project.save()
+
+                points_after_save = project.get_points()
+                print(f"DEBUG: Пунктов после сохранения: {len(points_after_save)}")
+                print(f"DEBUG: Проект сохранен в: {project.project_dir / project.name}.gad")
 
                 # Создание главного окна с проектом
                 config = MainWindowConfig(
@@ -226,6 +277,9 @@ def main():
                 )
                 main_window = MainWindow(config)
                 main_window.current_project = project
+
+                # Обновляем данные в интерфейсе
+                main_window._refresh_data_views()
 
                 # Закрываем приветственный диалог после успешного создания
                 welcome_dialog.accept()
@@ -266,6 +320,9 @@ def main():
                     )
                     main_window = MainWindow(config)
                     main_window.current_project = project
+
+                    # Обновляем данные в интерфейсе
+                    main_window._refresh_data_views()
 
                     # Закрываем приветственный диалог после успешного открытия
                     welcome_dialog.accept()

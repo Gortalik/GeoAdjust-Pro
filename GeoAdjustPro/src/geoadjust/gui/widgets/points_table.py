@@ -233,9 +233,9 @@ class PointsTableView(QTableView):
 
     def _setup_model(self):
         """Настройка модели данных"""
-        self.model = QStandardItemModel(0, 9, self)  # Добавлена колонка для статуса
+        self.model = QStandardItemModel(0, 10, self)  # Добавлена колонка для класса точности
         self.model.setHorizontalHeaderLabels([
-            "ID", "Наименование", "Тип", "Статус", "X (м)", "Y (м)",
+            "ID", "Наименование", "Тип", "Статус", "Класс точности", "X (м)", "Y (м)",
             "H (м)", "Прибор", "Примечание"
         ])
         self.setModel(self.model)
@@ -243,6 +243,15 @@ class PointsTableView(QTableView):
         # Настройка делегатов для визуальных индикаторов
         self.setItemDelegateForColumn(2, PointTypeDelegate(self))  # Колонка "Тип"
         self.setItemDelegateForColumn(3, ComboBoxDelegate(["working", "initial"], self))  # Колонка "Статус"
+        self.setItemDelegateForColumn(4, ComboBoxDelegate([
+            "",
+            "Полигонометрия 4 класса",
+            "Нивелирование I класса",
+            "Нивелирование II класса",
+            "Нивелирование III класса",
+            "Нивелирование IV класса",
+            "Техническое нивелирование"
+        ], self))  # Колонка "Класс точности"
     
     def _show_context_menu(self, position):
         """Показ контекстного меню"""
@@ -277,7 +286,10 @@ class PointsTableView(QTableView):
             row = indexes[0].row()
             point_id = self.model.index(row, 0).data()
             if point_id:
+                print(f"DEBUG: PointsTable emitting point_selected signal for {point_id} (row {row})")
+                print(f"DEBUG: Signal receivers: {self.point_selected.receivers()}")
                 self.point_selected.emit(point_id)
+                print(f"DEBUG: Signal emitted successfully")
 
     def _on_double_click(self, index):
         """Обработка двойного клика (для совместимости)"""
@@ -298,6 +310,7 @@ class PointsTableView(QTableView):
             new_id,           # Наименование
             "FREE",           # Тип
             "working",        # Статус (по умолчанию рабочий)
+            "",               # Класс точности
             "",               # X
             "",               # Y
             "",               # H
@@ -413,7 +426,8 @@ class PointsTableView(QTableView):
                 point.get('id', ''),
                 point.get('name', ''),
                 point.get('type', 'FREE'),
-                point.get('status', 'working'),  # Добавлен статус
+                point.get('status', 'working'),  # Статус
+                point.get('normative_class', ''),  # Класс точности
                 str(point.get('x', '')),
                 str(point.get('y', '')),
                 str(point.get('h', '')),
@@ -438,12 +452,13 @@ class PointsTableView(QTableView):
                 'id': self.model.index(row, 0).data(),
                 'name': self.model.index(row, 1).data(),
                 'type': self.model.index(row, 2).data(),
-                'status': self.model.index(row, 3).data(),  # Добавлен статус
-                'x': self.model.index(row, 4).data(),
-                'y': self.model.index(row, 5).data(),
-                'h': self.model.index(row, 6).data(),
-                'instrument': self.model.index(row, 7).data(),
-                'notes': self.model.index(row, 8).data()
+                'status': self.model.index(row, 3).data(),  # Статус
+                'normative_class': self.model.index(row, 4).data(),  # Класс точности
+                'x': self.model.index(row, 5).data(),
+                'y': self.model.index(row, 6).data(),
+                'h': self.model.index(row, 7).data(),
+                'instrument': self.model.index(row, 8).data(),
+                'notes': self.model.index(row, 9).data()
             }
             points.append(point_data)
         

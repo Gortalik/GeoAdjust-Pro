@@ -66,16 +66,22 @@ class PropertiesWidget(QWidget):
     
     def set_point_properties(self, point_id: str, properties: dict):
         """Установка свойств пункта"""
+        print(f"DEBUG: PropertiesWidget.set_point_properties called for {point_id}")
+        print(f"DEBUG: Properties data: {properties}")
         self.current_object = {"type": "point", "id": point_id}
         self.title_label.setText(f"Свойства пункта: {point_id}")
-        
+        print(f"DEBUG: Title set to: {self.title_label.text()}")
+        print(f"DEBUG: Current object set to: {self.current_object}")
+
         self._clear_properties()
+        print("DEBUG: Properties cleared")
         
         # ID пункта (только чтение)
         id_edit = QLineEdit(point_id)
         id_edit.setReadOnly(True)
         self.properties_layout.addRow("ID:", id_edit)
         self.property_widgets["id"] = id_edit
+        print(f"DEBUG: Added ID field: {point_id}")
         
         # Тип пункта
         type_combo = QComboBox()
@@ -132,6 +138,9 @@ class PropertiesWidget(QWidget):
         sigma_y_spin.setSuffix(" м")
         self.properties_layout.addRow("σ Y:", sigma_y_spin)
         self.property_widgets["sigma_y"] = sigma_y_spin
+
+        print(f"DEBUG: Все поля свойств добавлены. Количество виджетов: {len(self.property_widgets)}")
+        print(f"DEBUG: Properties widget готов к отображению")
     
     def set_observation_properties(self, obs_id: str, properties: dict):
         """Установка свойств измерения"""
