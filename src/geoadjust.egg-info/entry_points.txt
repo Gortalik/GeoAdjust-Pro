@@ -1,0 +1,2 @@
+[console_scripts]
+geoadjust = geoadjust.__main__:main
