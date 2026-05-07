@@ -1,1 +1,24 @@
-Nothing should be ignored based on the provided file changes. The modification of 'src/geoadjust/io/gsi.py' represents a standard source code file change, which does not warrant any additions to the .gitignore file.
+```
+# Compiled Python files
+*.pyc
+__pycache__/
+
+# Dependencies
+.venv/
+venv/
+node_modules/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+```
