@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geoadjust"
+version = "1.0.0"
+description = "Профессиональное уравнивание геодезических сетей (МНК)"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "GeoAdjust Team", email = "support@geoadjust.pro"}
+]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "scikit-sparse>=0.4.6",
+    "pyqt5>=5.15",
+    "pandas>=1.5",
+    "openpyxl>=3.1",
+    "pyyaml>=6.0",
+    "loguru>=0.7",
+    "networkx>=3.0",
+    "striprtf>=0.0.22"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4", 
+    "pytest-cov", 
+    "pytest-benchmark",
+    "ruff>=0.3", 
+    "mypy>=1.8", 
+    "black",
+    "memray", 
+    "line-profiler",
+    "pyinstaller>=6.0"
+]
+
+[project.scripts]
+geoadjust = "geoadjust.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-v --tb=short --cov=geoadjust"
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+ignore_missing_imports = true
