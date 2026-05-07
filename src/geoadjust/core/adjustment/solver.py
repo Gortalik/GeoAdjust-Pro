@@ -44,8 +44,11 @@ def solve_normal_equations(
     """
     # Формирование нормальной матрицы N = AᵀPA
     # Используем efficient sparse multiplication
-    AP = A @ P  # (m×n) @ (m×m) диагональная → (m×n)
-    N = (AP.T @ A).tocsc()  # (n×m) @ (m×n) → (n×n), CSC формат для solver
+    # Правильный порядок: N = Aᵀ @ (P @ A)
+    # P @ A: (m×m) @ (m×n) → (m×n)
+    # Aᵀ @ (P @ A): (n×m) @ (m×n) → (n×n)
+    PA = P @ A  # Умножаем диагональную P на A
+    N = (A.T @ PA).tocsc()  # CSC формат для solver
     
     # Вектор U = AᵀPL
     PL = P @ L

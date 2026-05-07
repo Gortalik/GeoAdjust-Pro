@@ -39,33 +39,39 @@ class GSIParser(BaseParser):
             if not line or (not line[0].isdigit() and line[0] not in "+-"):
                 continue
             
-            # Извлекаем Word ID (формат XX.. или XX..YY)
-            word_match = re.match(r"^(\d{2})\.\.([0-9A-Fa-f]*)", line)
+            # Извлекаем Word ID (формат XX..YY где YY - опциональный суффикс)
+            word_match = re.match(r"^(\d{2})\.\.", line)
             if not word_match:
                 continue
                 
             word_id = word_match.group(1)
             
             # Извлекаем значение после пробела
-            value_match = re.search(r"\s+([+-]?\d*\.?\d+)", line)
+            value_match = re.search(r"\s+(.+?)(?:\s|$)", line)
             if not value_match:
                 continue
             
-            try:
-                value = float(value_match.group(1))
-            except ValueError:
-                continue
+            value_str = value_match.group(1).strip()
+            
+            # Для имен точек (31, 32) значение - это строка
+            if word_id in ("31", "32"):
+                point_name = value_str.strip()
+            else:
+                # Для числовых значений пытаемся конвертировать в float
+                try:
+                    value = float(value_str)
+                except ValueError:
+                    continue
             
             # Обработка по типу Word ID
-            if word_id == "31" or word_id == "32":  # Имя точки или код
-                # Новая станция если target ещё не установлен
-                if self.current_target is None:
-                    self.current_station = value_match.group(1).strip()
-                    self.setup_counter += 1
-                else:
-                    self.current_target = value_match.group(1).strip()
+            if word_id == "31":  # Имя точки (станция)
+                self.current_station = point_name
+                self.setup_counter += 1
+                self.current_target = None  # Сброс target для новой станции
+            elif word_id == "32":  # Код/имя целевой точки
+                if self.current_station and self.current_target is None:
+                    self.current_target = point_name
                     self.current_distance = 1.0  # Сброс расстояния
-                    
             elif word_id == "81":  # Превышение
                 if self.current_station and self.current_target:
                     observations.append(Observation(
@@ -76,7 +82,6 @@ class GSIParser(BaseParser):
                         type=ObsType.LEVELING,
                         setup_id=f"setup_{self.setup_counter}"
                     ))
-                    
             elif word_id == "82":  # Расстояние
                 self.current_distance = abs(value) if abs(value) > 0.1 else 1.0
                 

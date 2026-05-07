@@ -1,0 +1,27 @@
+Metadata-Version: 2.4
+Name: geoadjust
+Version: 1.0.0
+Summary: Профессиональное уравнивание геодезических сетей (МНК)
+Author-email: GeoAdjust Team <support@geoadjust.pro>
+License: MIT
+Requires-Python: >=3.9
+Requires-Dist: numpy>=1.24
+Requires-Dist: scipy>=1.10
+Requires-Dist: scikit-sparse>=0.4.6
+Requires-Dist: pyqt5>=5.15
+Requires-Dist: pandas>=1.5
+Requires-Dist: openpyxl>=3.1
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: loguru>=0.7
+Requires-Dist: networkx>=3.0
+Requires-Dist: striprtf>=0.0.22
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4; extra == "dev"
+Requires-Dist: pytest-cov; extra == "dev"
+Requires-Dist: pytest-benchmark; extra == "dev"
+Requires-Dist: ruff>=0.3; extra == "dev"
+Requires-Dist: mypy>=1.8; extra == "dev"
+Requires-Dist: black; extra == "dev"
+Requires-Dist: memray; extra == "dev"
+Requires-Dist: line-profiler; extra == "dev"
+Requires-Dist: pyinstaller>=6.0; extra == "dev"
