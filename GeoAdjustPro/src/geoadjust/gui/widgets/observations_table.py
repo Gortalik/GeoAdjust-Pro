@@ -523,26 +523,30 @@ class ObservationsTableModel(QAbstractTableModel):
         from geoadjust.core.network.models import CombinedObservation
 
         if isinstance(obs, CombinedObservation):
-            return obs.from_point_id
+            return obs.from_point_id or ""
         elif isinstance(obs, dict):
-            return obs.get('from_point', obs.get('from_point_id', ''))
-        return getattr(obs, 'from_point', getattr(obs, 'from_point_id', ''))
+            return obs.get('from_point', obs.get('from_point_id', '')) or ""
+        result = getattr(obs, 'from_point', getattr(obs, 'from_point_id', ''))
+        return result if result else ""
 
     def _get_to_point(self, obs) -> str:
         """Получение конечной точки"""
         from geoadjust.core.network.models import CombinedObservation
 
         if isinstance(obs, CombinedObservation):
-            return obs.to_point_id
+            return obs.to_point_id or ""
         elif isinstance(obs, dict):
-            return obs.get('to_point', obs.get('to_point_id', ''))
-        return getattr(obs, 'to_point', getattr(obs, 'to_point_id', ''))
+            return obs.get('to_point', obs.get('to_point_id', '')) or ""
+        result = getattr(obs, 'to_point', getattr(obs, 'to_point_id', ''))
+        return result if result else ""
     
     def _get_value(self, obs) -> float:
         """Получение значения измерения"""
         if isinstance(obs, dict):
-            return obs.get('value', 0)
-        return getattr(obs, 'value', 0)
+            val = obs.get('value')
+            return val if val is not None else 0.0
+        val = getattr(obs, 'value', 0)
+        return val if val is not None else 0.0
     
     def rowCount(self, parent=None):
         return len(self._filtered_observations)
@@ -596,15 +600,17 @@ class ObservationsTableModel(QAbstractTableModel):
             }
             return type_names.get(obs_type, obs_type)
         elif col == 2:  # От пункта
-            return self._get_from_point(obs)
+            return self._get_from_point(obs) or "-"
         elif col == 3:  # К пункту
-            return self._get_to_point(obs)
+            return self._get_to_point(obs) or "-"
         elif col == 4:  # Превышение
             value = self._get_value(obs)
+            if value is None:
+                return "-"
             return f"{value:.5f}"
         elif col == 5:  # Расстояние
             dist = obs.get('distance') if isinstance(obs, dict) else getattr(obs, 'distance', None)
-            if dist is not None:
+            if dist is not None and dist > 0:
                 return f"{dist:.3f}"
             return "-"
         elif col == 6:  # Высота инструмента
