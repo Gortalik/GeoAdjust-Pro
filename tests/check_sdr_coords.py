@@ -5,7 +5,6 @@
 """
 
 import sys
-sys.path.insert(0, 'GeoAdjustPro/src')
 
 from geoadjust.io.formats.sdr import SDRParser
 

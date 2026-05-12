@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 
 # Добавляем путь к модулю
-sys.path.insert(0, str(Path(__file__).parent / 'GeoAdjustPro' / 'src'))
 
 def test_project_data_storage():
     """Тест сохранения и чтения данных проекта"""

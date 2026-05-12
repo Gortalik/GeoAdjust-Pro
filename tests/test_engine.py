@@ -6,7 +6,6 @@
 
 import sys
 import os
-sys.path.insert(0, 'GeoAdjustPro/src')
 
 from geoadjust.core.adjustment.engine import AdjustmentEngine
 import numpy as np

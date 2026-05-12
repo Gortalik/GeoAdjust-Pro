@@ -22,7 +22,6 @@ from dataclasses import dataclass
 from typing import List, Literal, Dict
 import scipy.sparse as sparse
 import re
-sys.path.insert(0, 'GeoAdjustPro/src')
 
 from geoadjust.io.formats.sdr import SDRParser
 from geoadjust.io.formats.gsi import GSIParser

@@ -7,7 +7,6 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent / "GeoAdjustPro" / "src"))
 
 def analyze_leveling_structure():
     """Анализ структуры данных нивелирования"""

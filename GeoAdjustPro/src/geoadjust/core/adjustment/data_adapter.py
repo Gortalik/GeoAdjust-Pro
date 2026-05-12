@@ -498,11 +498,7 @@ def full_cycle_test(file_path: str, parser_class, fixed_points: List[str] = None
             'error': str(e)
         }
 
-
-if __name__ == "__main__":
-    # Пример использования
     import sys
-    sys.path.insert(0, '/workspace/GeoAdjustPro/src')
     
     from geoadjust.io.formats.sdr import SDRParser
     

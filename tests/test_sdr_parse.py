@@ -2,7 +2,6 @@ import sys
 import os
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.getcwd(), 'src'))
 
 print("Python path:", sys.path[:3])
 

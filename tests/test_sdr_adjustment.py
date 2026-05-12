@@ -6,7 +6,6 @@
 
 import sys
 import os
-sys.path.insert(0, 'GeoAdjustPro/src')
 
 from geoadjust.io.formats.sdr import SDRParser
 from geo_adjust_pro.engine import GeoAdjustEngine

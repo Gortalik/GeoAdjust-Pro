@@ -9,7 +9,6 @@ import sys
 import os
 
 # Добавляем путь к проекту
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'GeoAdjustPro', 'src'))
 
 def test_plan_view():
     """Тест окна плана с реальными данными"""

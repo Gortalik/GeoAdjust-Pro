@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 import logging
 
-sys.path.insert(0, str(Path(__file__).parent / "GeoAdjustPro" / "src"))
 
 logging.basicConfig(level=logging.DEBUG)
 

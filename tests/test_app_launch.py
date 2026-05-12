@@ -12,7 +12,6 @@ from pathlib import Path
 # Добавляем путь к исходному коду
 current_dir = Path(__file__).parent
 src_path = current_dir / "GeoAdjustPro" / "src"
-sys.path.insert(0, str(src_path))
 
 def test_imports():
     """Тестирование импортов всех модулей"""

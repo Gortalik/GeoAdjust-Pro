@@ -7,7 +7,6 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent / "GeoAdjustPro" / "src"))
 
 def analyze_excel_detailed(file_path):
     """Подробный анализ Excel файла"""

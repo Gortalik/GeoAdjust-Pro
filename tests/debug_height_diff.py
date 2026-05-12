@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 
 # Use working prototype parser
-sys.path.insert(0, str(Path(__file__).parent.parent))
 from working_prototype import GSIParser
 
 def debug_height_diff(file_path):

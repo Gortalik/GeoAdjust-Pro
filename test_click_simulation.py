@@ -9,7 +9,6 @@ from pathlib import Path
 import time
 
 # Добавляем путь к модулю
-sys.path.insert(0, str(Path(__file__).parent / 'GeoAdjustPro' / 'src'))
 
 def simulate_click_test():
     """Тест симуляции клика по пункту"""

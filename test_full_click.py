@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 
 # Добавляем путь к модулю
-sys.path.insert(0, str(Path(__file__).parent / 'GeoAdjustPro' / 'src'))
 
 def test_full_click_to_properties():
     """Тест полного пути от клика до отображения свойств"""

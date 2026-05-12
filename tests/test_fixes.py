@@ -6,7 +6,6 @@
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'GeoAdjustPro', 'src'))
 
 from geoadjust.core.preprocessing.module import PreprocessingModule
 from geoadjust.core.adjustment.data_adapter import DataAdapter
