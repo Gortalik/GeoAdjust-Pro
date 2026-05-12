@@ -7,7 +7,6 @@
 import sys
 import os
 import numpy as np
-sys.path.insert(0, 'GeoAdjustPro/src')
 
 from geoadjust.io.formats.sdr import SDRParser
 from geo_adjust_pro import NetworkPoint, Observation

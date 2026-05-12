@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 
 # Добавляем путь к модулям
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 from geoadjust.io.formats.gsi import GSIParser
 from geoadjust.io.formats.sdr import SDRParser

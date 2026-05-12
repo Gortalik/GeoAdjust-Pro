@@ -13,7 +13,6 @@ import sys
 import numpy as np
 
 # Добавляем путь к модулям
-sys.path.insert(0, 'src')
 
 from geoadjust.core.network.models import NetworkPoint, Observation
 from geoadjust.core.adjustment.instruments import Instrument

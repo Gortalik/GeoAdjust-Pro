@@ -7,7 +7,6 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent / "GeoAdjustPro" / "src"))
 
 def test_gsi_leveling_import():
     """Тест импорта GSI файла с нивелированием"""

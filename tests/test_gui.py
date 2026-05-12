@@ -6,7 +6,6 @@
 
 import sys
 import os
-sys.path.insert(0, 'GeoAdjustPro/src')
 
 # Устанавливаем виртуальный дисплей для тестирования GUI
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'

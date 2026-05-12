@@ -10,7 +10,6 @@ import sys
 import os
 
 # Добавляем путь к модулям GeoAdjustPro
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'GeoAdjustPro', 'src'))
 
 import numpy as np
 from scipy import sparse

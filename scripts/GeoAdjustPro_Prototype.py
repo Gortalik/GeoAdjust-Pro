@@ -9,7 +9,6 @@ import sys
 import os
 
 # GeoAdjustPro folder not available, using working prototype
-sys.path.insert(0, os.path.dirname(__file__))
 
 def create_demo_project():
     """Создание демонстрационного проекта"""

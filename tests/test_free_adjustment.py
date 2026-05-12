@@ -6,7 +6,6 @@
 
 import sys
 import os
-sys.path.insert(0, 'GeoAdjustPro/src')
 
 from geoadjust.core.adjustment.equations_builder import EquationsBuilder
 import numpy as np

@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 
 # Добавляем путь к модулю
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 def test_properties_widget():
     """Тест виджета свойств"""

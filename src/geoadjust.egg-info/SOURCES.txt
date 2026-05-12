@@ -30,7 +30,9 @@ src/geoadjust/io/gsi.py
 src/geoadjust/io/office.py
 src/geoadjust/io/sdr.py
 src/geoadjust/io/validators.py
+src/geoadjust/utils/__init__.py
 src/geoadjust/utils/paths.py
+src/geoadjust/utils/units.py
 src/geoadjust/validation/__init__.py
 src/geoadjust/validation/normative_checker.py
 tests/test_app_launch.py

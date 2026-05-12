@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import sys
-sys.path.insert(0, 'src')
 from geoadjust.io.formats.sdr import SDRParser
 from pathlib import Path
 

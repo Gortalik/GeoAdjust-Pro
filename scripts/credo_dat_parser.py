@@ -9,7 +9,6 @@ from pathlib import Path
 import pandas as pd
 from typing import List, Dict, Any
 
-sys.path.insert(0, str(Path(__file__).parent / "GeoAdjustPro" / "src"))
 
 class CredoDATParser:
     """Парсер данных нивелирования из Credo DAT (Excel)"""

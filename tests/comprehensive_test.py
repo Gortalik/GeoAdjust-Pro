@@ -10,7 +10,6 @@ import os
 import time
 
 # Path to project - using working prototype
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 class GeoAdjustProTester:
     """Комплексный тестер всех модулей GeoAdjust Pro"""

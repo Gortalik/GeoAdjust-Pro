@@ -15,7 +15,6 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 # Добавляем путь к модулям
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 def test_gsi_parsing():
     """Тестирование GSI парсера на наших тестовых данных"""

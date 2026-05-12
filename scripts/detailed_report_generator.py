@@ -9,8 +9,6 @@ import os
 from pathlib import Path
 
 # Add path to GeoAdjustPro modules
-sys.path.insert(0, str(Path(__file__).parent / "GeoAdjustPro" / "src"))
-sys.path.insert(0, '/workspace')
 
 from geo_adjust_pro import GeoAdjustEngine, NetworkPoint, Observation, NetworkData
 import logging

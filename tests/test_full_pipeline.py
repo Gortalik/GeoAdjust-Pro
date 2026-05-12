@@ -5,7 +5,6 @@
 """
 import sys
 import os
-sys.path.insert(0, '/workspace')
 
 from geo_adjust_pro import GeoAdjustEngine, NetworkPoint, Observation, NetworkData
 import logging

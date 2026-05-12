@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 
 # Добавляем путь к модулю
-sys.path.insert(0, str(Path(__file__).parent / 'GeoAdjustPro' / 'src'))
 
 def test_full_application_flow():
     """Тест полного цикла работы приложения"""

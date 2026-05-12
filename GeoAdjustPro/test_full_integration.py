@@ -16,7 +16,6 @@ from pathlib import Path
 import numpy as np
 from scipy import sparse
 
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
 from geoadjust.io.formats.gsi import GSIParser
 from geoadjust.io.formats.sdr import SDRParser

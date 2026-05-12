@@ -7,7 +7,6 @@
 import sys
 import os
 import numpy as np
-sys.path.insert(0, 'GeoAdjustPro/src')
 
 from geoadjust.core.adjustment.engine import AdjustmentEngine
 import scipy.sparse as sparse
