@@ -2,12 +2,117 @@
 """Сборка матриц A и L с валидацией и детальным логированием"""
 import numpy as np
 import scipy.sparse as sparse
+from scipy.sparse.linalg import eigsh
 from typing import List, Dict, Tuple, Optional, Any
 from geoadjust.core.adjustment.weights import InstrumentSpec, ObsType
 from geoadjust.io.base import Observation
 import logging
 
 logger = logging.getLogger("geoadjust.equations_builder")
+
+
+def check_rank_sparse(N_sparse: sparse.spmatrix, tol: float = 1e-10) -> int:
+    """
+    Оценка ранга разреженной нормальной матрицы без перевода в плотную.
+    Использует неполное разложение Ланцоша для вычисления собственных значений.
+    
+    Args:
+        N_sparse: Разреженная симметричная матрица N = A^T @ A
+        tol: Порог отсечения малых собственных значений
+        
+    Returns:
+        Ранг матрицы (количество собственных значений > tol)
+    """
+    n = N_sparse.shape[0]
+    if n == 0:
+        return 0
+    
+    try:
+        # Для небольших матриц (< 100) можно использовать плотный метод
+        if n < 100:
+            return np.linalg.matrix_rank(N_sparse.toarray(), tol=tol)
+        
+        # Оцениваем количество собственных значений
+        k = min(n - 1, max(10, n // 10))
+        
+        # Находим максимальные собственные значения
+        try:
+            eigenvalues_max = eigsh(N_sparse, k=k, which='LM', return_eigenvectors=False, tol=1e-6)
+            # Считаем сколько больше порога
+            rank_estimate = np.sum(eigenvalues_max > tol)
+            
+            # Если все найденные собственные значения больше порога, 
+            # проверяем минимальные для уточнения
+            if rank_estimate == k:
+                try:
+                    eigenvalues_min = eigsh(N_sparse, k=min(k, n//2), which='SM', sigma=tol, 
+                                           return_eigenvectors=False, tol=1e-6)
+                    rank_estimate = np.sum(eigenvalues_min > tol)
+                except Exception:
+                    pass
+            
+            return rank_estimate
+        except Exception:
+            # Fallback для случаев когда eigsh не сходится
+            return np.linalg.matrix_rank(N_sparse.toarray(), tol=tol)
+            
+    except Exception as e:
+        logger.warning(f"Не удалось вычислить ранг через sparse методы: {e}. Использую fallback.")
+        return np.linalg.matrix_rank(N_sparse.toarray(), tol=tol)
+
+
+def check_cond_sparse(N_sparse: sparse.spmatrix, tol: float = 1e-12) -> float:
+    """
+    Оценка числа обусловленности разреженной матрицы без перевода в плотную.
+    
+    Args:
+        N_sparse: Разреженная симметричная матрица
+        tol: Порог для регуляризации
+        
+    Returns:
+        Число обусловленности или inf если матрица вырождена
+    """
+    n = N_sparse.shape[0]
+    if n == 0:
+        return float('inf')
+    
+    try:
+        # Для небольших матриц используем плотный метод
+        if n < 100:
+            N_dense = N_sparse.toarray()
+            try:
+                return np.linalg.cond(N_dense)
+            except Exception:
+                return float('inf')
+        
+        # Находим максимальное собственное значение
+        try:
+            sigma_max = eigsh(N_sparse, k=1, which='LM', return_eigenvectors=False, tol=1e-6)[0]
+        except Exception:
+            return float('inf')
+        
+        # Находим минимальное собственное значение
+        try:
+            # Используем shift-invert для нахождения минимального собственного значения
+            sigma_min_array = eigsh(N_sparse, k=1, which='SM', sigma=tol, 
+                                   return_eigenvectors=False, tol=1e-6)
+            sigma_min = sigma_min_array[0]
+        except Exception:
+            # Если не получается найти минимальное, оцениваем через след
+            try:
+                trace = N_sparse.diagonal().sum()
+                sigma_min = max(tol, trace / n)
+            except Exception:
+                return float('inf')
+        
+        if sigma_min <= tol or sigma_max <= tol:
+            return float('inf')
+        
+        return sigma_max / sigma_min
+        
+    except Exception as e:
+        logger.warning(f"Не удалось вычислить число обусловленности: {e}")
+        return float('inf')
 
 class EquationsBuilder:
     """
@@ -150,7 +255,7 @@ class EquationsBuilder:
 
     def _validate_system(self, A: sparse.csr_matrix, L: np.ndarray, 
                          point_indices: Dict[str, int], fixed: Dict[str, float]) -> Dict[str, Any]:
-        """Проверка ранга, обусловленности и размерностей системы."""
+        """Проверка ранга, обусловленности и размерностей системы с использованием sparse методов."""
         report = {"status": "PASSED", "checks": {}, "message": "Система валидна"}
 
         n_obs, n_params = A.shape
@@ -162,10 +267,12 @@ class EquationsBuilder:
             return {"status": "FAILED", "message": "Нет измерений для уравнивания"}
 
         if n_params > 0:
-            # Проверка ранга нормальной матрицы N = A^T A
+            # Проверка ранга нормальной матрицы N = A^T A БЕЗ перевода в плотную
             try:
-                N = (A.T @ A).toarray()
-                rank = np.linalg.matrix_rank(N, tol=1e-12)
+                N = A.T @ A  # Остаётся разреженной
+                
+                # Используем новые sparse методы для больших матриц
+                rank = check_rank_sparse(N, tol=1e-10)
                 report["checks"]["rank"] = f"{rank}/{n_params}"
                 
                 defect = n_params - rank
@@ -177,15 +284,18 @@ class EquationsBuilder:
                     report["status"] = "FAILED"
                     report["message"] = f"❌ Критический дефект ранга: {defect}. Проверьте связность."
 
-                # Проверка обусловленности
-                cond = np.linalg.cond(N)
-                report["checks"]["condition_number"] = f"{cond:.2e}"
+                # Проверка обусловленности без toarray()
+                cond = check_cond_sparse(N, tol=1e-12)
+                report["checks"]["condition_number"] = f"{cond:.2e}" if cond != float('inf') else "inf"
                 if cond > 1e14:
                     if report["status"] == "PASSED":
                         report["status"] = "WARNING"
                     report["message"] += f" | ⚠️ Плохая обусловленность (cond={cond:.2e})"
+                    
             except Exception as e:
+                logger.error(f"Ошибка валидации системы: {e}")
                 report["checks"]["condition_number"] = f"Не вычислено: {str(e)}"
+                report["status"] = "VALIDATION_ERROR"
         else:
             report["checks"]["rank"] = "N/A (нет параметров)"
 
