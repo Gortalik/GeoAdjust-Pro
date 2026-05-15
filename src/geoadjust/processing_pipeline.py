@@ -8,18 +8,22 @@ import scipy.sparse as sparse
 
 from geoadjust.core.processing_context import ProcessingContext
 from geoadjust.core.adjustment.equations_builder import EquationsBuilder
-from geoadjust.core.adjustment.weights import InstrumentSpec, build_weight_matrix, ObsType
+from geoadjust.core.adjustment.weights import InstrumentSpec, ObsType
+from geoadjust.core.adjustment.engine import AdjustmentEngine
+from geoadjust.core.adjustment.s_transform import apply_s_transformation
+from geoadjust.core.validation.sparse_validation import validate_sparse_system
 
 logger = logging.getLogger("geoadjust.pipeline")
 
 class ProcessingPipeline:
     """
-    Полный конвейер: Предобработка → Сборка A, P, L → Валидация → Готовность к уравниванию.
+    Полный конвейер: Предобработка → Сборка A, P, L → Валидация → Уравнивание → S-трансформация.
     Все шаги логируются, данные передаются только через ProcessingContext.
     """
     def __init__(self, spec: InstrumentSpec = None):
         self.spec = spec or InstrumentSpec(class_code="4")
         self.equations_builder = EquationsBuilder(spec=self.spec)
+        self.engine = AdjustmentEngine(spec=self.spec)
 
     def run(self, ctx: ProcessingContext) -> ProcessingContext:
         ctx.status = "RUNNING"
@@ -36,11 +40,19 @@ class ProcessingPipeline:
             # 3. Сборка матрицы P (веса)
             ctx = self._assemble_P(ctx)
             
-            # 4. Финальная валидация системы
+            # 4. Финальная валидация системы с использованием sparse методов
             ctx = self._validate_final_system(ctx)
             
+            # 5. Уравнивание (если система валидна)
             if ctx.status == "READY":
-                ctx.add_log("INFO", "PIPELINE", "Конвейер завершён успешно. Система готова к уравниванию.")
+                ctx = self._adjust(ctx)
+                
+            # 6. S-трансформация для свободных сетей
+            if ctx.status == "ADJUSTED":
+                ctx = apply_s_transformation(ctx)
+            
+            if ctx.status in ("READY", "ADJUSTED", "STABILIZED"):
+                ctx.add_log("INFO", "PIPELINE", f"✅ Конвейер завершён успешно за {(datetime.now()-ctx.start_time).total_seconds():.2f}с")
             else:
                 ctx.add_log("ERROR", "PIPELINE", f"Конвейер остановлен: {ctx.status}")
                 
@@ -177,33 +189,47 @@ class ProcessingPipeline:
 
         # Проверка ранга нормальной матрицы N = A^T P A БЕЗ перевода в плотную
         try:
-            from geoadjust.core.adjustment.equations_builder import check_rank_sparse, check_cond_sparse
-            
             N = A.T @ P @ A  # Остаётся разреженной
             n_params = N.shape[1]
             
-            rank = check_rank_sparse(N, tol=1e-10)
-            defect = n_params - rank
-            cond = check_cond_sparse(N, tol=1e-12)
-
-            ctx.validation_report.update({
-                "rank": f"{rank}/{n_params}",
-                "defect": defect,
-                "condition_number": f"{cond:.2e}" if cond != float('inf') else "inf"
-            })
+            # Используем validate_sparse_system из core.validation
+            validation_result = validate_sparse_system(A, P, L, n_params=n_params)
             
-            if defect > 3:
+            ctx.validation_report.update(validation_result)
+            
+            if validation_result["status"] == "FAILED":
                 ctx.status = "RANK_DEFICIENT"
-                ctx.add_log("WARNING", "VALIDATION", f"Критический дефект ранга: {defect}. Сеть не жёстко закреплена.")
-            elif cond > 1e12:
+                ctx.add_log("ERROR", "VALIDATION", validation_result["message"])
+            elif validation_result["status"] == "FREE_NETWORK":
+                ctx.status = "READY"  # Свободная сеть будет обработана S-трансформацией после уравнивания
+                ctx.add_log("WARNING", "VALIDATION", validation_result["message"])
+            elif validation_result["status"] == "POORLY_CONDITIONED":
                 ctx.status = "POORLY_CONDITIONED"
-                ctx.add_log("WARNING", "VALIDATION", f"Плохая обусловленность: cond={cond:.2e}. Возможна неустойчивость решения.")
+                ctx.add_log("WARNING", "VALIDATION", validation_result["message"])
             else:
                 ctx.status = "READY"
-                ctx.add_log("INFO", "VALIDATION", "Система уравнений валидна. Готово к уравниванию.")
+                ctx.add_log("INFO", "VALIDATION", validation_result["message"])
                 
         except Exception as e:
             ctx.status = "VALIDATION_ERROR"
             ctx.add_log("ERROR", "VALIDATION", f"Ошибка валидации: {str(e)}")
+            
+        return ctx
+
+    def _adjust(self, ctx: ProcessingContext) -> ProcessingContext:
+        """Запуск уравнивания через AdjustmentEngine."""
+        ctx.add_log("INFO", "ADJUSTMENT", "Запуск уравнивания методом наименьших квадратов")
+        
+        try:
+            # Используем существующий метод adjust_heights из AdjustmentEngine
+            result_ctx = self.engine.adjust_heights(ctx)
+            if result_ctx.status == "ADJUSTED":
+                sigma0 = result_ctx.matrices.get("sigma0", float('nan'))
+                ctx.add_log("INFO", "ADJUSTMENT", f"✅ Уравнивание завершено. σ₀ = {sigma0:.6f}")
+            return result_ctx
+        except Exception as e:
+            ctx.status = "ADJUSTMENT_ERROR"
+            ctx.add_log("ERROR", "ADJUSTMENT", f"Ошибка уравнивания: {str(e)}")
+            return ctx
             
         return ctx
