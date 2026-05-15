@@ -10,7 +10,7 @@ from geoadjust.io.base import Observation
 
 __all__ = [
     "AdjustmentEngine",
-    "InstrumentSpec", 
+    "InstrumentSpec",
     "ObsType",
     "Observation",
 ]

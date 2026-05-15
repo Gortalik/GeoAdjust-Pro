@@ -1,8 +1,8 @@
 # src/geoadjust/core/adjustment/s_transform.py
 """S-преобразование для стабилизации свободных сетей (дефект ранга 1–3)."""
-import numpy as np
 import logging
-from typing import Dict
+
+import numpy as np
 
 logger = logging.getLogger("geoadjust.s_transform")
 
@@ -24,7 +24,7 @@ def apply_s_transformation(ctx) -> "ProcessingContext":
         return ctx
 
     ctx.add_log("INFO", "S_TRANSFORM", f"Применение S-преобразования (дефект: {defect})")
-    
+
     try:
         # Собираем координаты до и после уравнивания
         pts_before = {}
@@ -35,11 +35,11 @@ def apply_s_transformation(ctx) -> "ProcessingContext":
                 pts_after[pid] = (pt.x, pt.y)
             elif hasattr(pt, 'x') and hasattr(pt, 'y'):
                 pts_after[pid] = (pt.x, pt.y)
-        
+
         if not pts_before:
             # Если нет начальных координат, используем текущие как базу
             pts_before = pts_after.copy()
-        
+
         if not pts_after:
             ctx.add_log("WARNING", "S_TRANSFORM", "Нет координат для трансформации")
             return ctx
@@ -53,12 +53,12 @@ def apply_s_transformation(ctx) -> "ProcessingContext":
         # Параметры Гельмерта (2D: сдвиг + поворот)
         dx_t = cx_b - cx_a
         dy_t = cy_b - cy_a
-        
+
         # Оценка поворота через центрированные координаты
         S_xx = sum((p[0]-cx_a)*(p[0]-cx_b) + (p[1]-cy_a)*(p[1]-cy_b) for p in pts_before.values())
         S_xy = sum((p[1]-cy_a)*(p[0]-cx_b) - (p[0]-cx_a)*(p[1]-cy_b) for p in pts_before.values())
         S_rr = sum((p[0]-cx_a)**2 + (p[1]-cy_a)**2 for p in pts_after.values())
-        
+
         if S_rr < 1e-10:
             logger.warning("Центроид вырожден. Применяется только сдвиг.")
             theta, scale = 0.0, 1.0
@@ -81,9 +81,9 @@ def apply_s_transformation(ctx) -> "ProcessingContext":
             "scale": float(scale)
         }
         ctx.status = "STABILIZED"
-        ctx.add_log("INFO", "S_TRANSFORM", 
+        ctx.add_log("INFO", "S_TRANSFORM",
             f"✅ Сеть стабилизирована. Δ=({dx_t:.4f},{dy_t:.4f})м, θ={np.degrees(theta):.4f}°, k={scale:.8f}")
     except Exception as e:
         ctx.add_log("ERROR", "S_TRANSFORM", f"Ошибка S-преобразования: {e}", exc_info=True)
-        
+
     return ctx

@@ -1,16 +1,17 @@
 # src/geoadjust/core/validation/sparse_validation.py
 """Проверка ранга и обусловленности нормальной матрицы N = AᵀPA без перевода в плотный формат."""
+import logging
+from typing import Any, Dict
+
 import numpy as np
 import scipy.sparse as sparse
 from scipy.sparse.linalg import eigsh
-from typing import Dict, Any
-import logging
 
 logger = logging.getLogger("geoadjust.validation.sparse")
 
 def validate_sparse_system(
-    A: sparse.spmatrix, 
-    P: sparse.spmatrix, 
+    A: sparse.spmatrix,
+    P: sparse.spmatrix,
     L: np.ndarray,
     n_params: int,
     dense_threshold: int = 200,
@@ -23,7 +24,7 @@ def validate_sparse_system(
     """
     report = {"status": "PASSED", "checks": {}, "message": "Система валидна", "defect": 0}
     n_obs = len(L)
-    
+
     if n_obs == 0:
         return _fail(report, "Нет измерений для уравнивания")
     if n_obs != A.shape[0]:
@@ -34,7 +35,7 @@ def validate_sparse_system(
 
     # Формируем нормальную матрицу N = A^T P A (разреженную)
     N = (A.T @ P @ A).tocsr()
-    
+
     # Для малых матриц используем точный плотный расчёт
     if n_params <= dense_threshold:
         try:
@@ -50,13 +51,13 @@ def validate_sparse_system(
         # eigsh требует SPD матрицу. Добавляем небольшой регуляризатор для стабильности
         k = min(n_params - 1, max(10, n_params // 4))
         sigma = 1e-12 if n_params > 500 else 0
-        
+
         # Оценка максимального собственного значения
         try:
             eig_max = eigsh(N, k=1, which='LM', sigma=sigma, return_eigenvectors=False)[0]
         except Exception:
             eig_max = 1.0
-            
+
         # Оценка наименьшего ненулевого eigenvalue
         try:
             eig_vals = eigsh(N, k=min(k, 10), which='SM', sigma=tol_rank*10, return_eigenvectors=False)
@@ -65,14 +66,14 @@ def validate_sparse_system(
             eig_min = np.min(nonzero) if len(nonzero) > 0 else tol_rank
         except Exception:
             eig_min = tol_rank
-        
+
         # Оценка ранга через подсчет собственных значений меньше порога
         try:
             small_eigs = eigsh(N, k=min(n_params, 50), which='SM', sigma=1e-14, return_eigenvectors=False)[0]
             rank_est = int(n_params - np.sum(np.abs(small_eigs) < tol_rank))
         except Exception:
             rank_est = n_params
-            
+
         cond_est = eig_max / max(eig_min, tol_rank)
 
         return _build_report(report, rank_est, n_params, cond_est, is_sparse=True)
@@ -86,7 +87,7 @@ def _build_report(report, rank, n_params, cond, is_sparse=False):
     report["checks"]["rank"] = f"{int(rank)}/{n_params}"
     report["checks"]["condition_number"] = f"{cond:.2e}"
     report["defect"] = max(0, int(n_params - rank))
-    
+
     if report["defect"] == 0:
         report["message"] = "Ранг полный. Сеть жёстко закреплена."
     elif report["defect"] <= 3:
@@ -95,7 +96,7 @@ def _build_report(report, rank, n_params, cond, is_sparse=False):
     else:
         report["status"] = "FAILED"
         report["message"] = f"❌ Критический дефект ранга: {report['defect']}. Проверьте исходные пункты."
-        
+
     if cond > 1e12:
         report["status"] = "POORLY_CONDITIONED" if report["status"] == "PASSED" else report["status"]
         report["message"] += f" | ⚠️ Высокая обусловленность (cond≈{cond:.2e})"

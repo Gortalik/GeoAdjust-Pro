@@ -16,11 +16,14 @@ src/geoadjust/core/adjustment/engine.py
 src/geoadjust/core/adjustment/equations.py
 src/geoadjust/core/adjustment/equations_builder.py
 src/geoadjust/core/adjustment/free_adjustment.py
+src/geoadjust/core/adjustment/s_transform.py
 src/geoadjust/core/adjustment/solver.py
 src/geoadjust/core/adjustment/weights.py
+src/geoadjust/core/validation/sparse_validation.py
 src/geoadjust/gui/__init__.py
 src/geoadjust/gui/main_window.py
 src/geoadjust/gui/qlog_handler.py
+src/geoadjust/gui/components/plan_view_pyqtgraph.py
 src/geoadjust/gui/reporting/__init__.py
 src/geoadjust/gui/reporting/exporter.py
 src/geoadjust/gui/widgets/__init__.py
@@ -74,5 +77,6 @@ tests/test_sdr_real.py
 tests/test_section_marker.py
 tests/test_sigma0_calculation.py
 tests/test_sigma_with_error.py
+tests/test_sparse_validation.py
 tests/test_station_search.py
 tests/test_visual_indicators.py

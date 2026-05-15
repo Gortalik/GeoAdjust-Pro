@@ -1,7 +1,9 @@
 """Модель и представление таблицы наблюдений (MVC паттерн)"""
-from PyQt5.QtCore import QAbstractTableModel, Qt, QModelIndex
-from PyQt5.QtWidgets import QTableView, QHeaderView
 from typing import List, Optional
+
+from PyQt5.QtCore import QAbstractTableModel, QModelIndex, Qt
+from PyQt5.QtWidgets import QHeaderView, QTableView
+
 
 class ObservationsModel(QAbstractTableModel):
     """
@@ -10,33 +12,33 @@ class ObservationsModel(QAbstractTableModel):
     Реализует паттерн MVC для корректного обновления UI
     через beginResetModel()/endResetModel().
     """
-    
+
     HEADERS = ["Станция", "Цель", "Тип", "Значение (м)", "Расстояние (м)", "Setup ID"]
-    
+
     def __init__(self, observations: Optional[List] = None):
         super().__init__()
         self._data = observations or []
-    
+
     def update_data(self, observations: List):
         """Безопасное обновление данных с уведомлением View"""
         self.beginResetModel()
         self._data = observations
         self.endResetModel()
-    
+
     def rowCount(self, parent: QModelIndex = None) -> int:
         if parent and parent.isValid():
             return 0
         return len(self._data)
-    
+
     def columnCount(self, parent: QModelIndex = None) -> int:
         if parent and parent.isValid():
             return 0
         return len(self.HEADERS)
-    
+
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
         if not index.isValid() or role != Qt.DisplayRole:
             return None
-        
+
         obs = self._data[index.row()]
         mapping = [
             obs.station_id,
@@ -46,19 +48,19 @@ class ObservationsModel(QAbstractTableModel):
             f"{obs.distance:.2f}",
             obs.setup_id or ""
         ]
-        
+
         return str(mapping[index.column()])
-    
+
     def headerData(
-        self, 
-        section: int, 
-        orientation: Qt.Orientation, 
+        self,
+        section: int,
+        orientation: Qt.Orientation,
         role: int = Qt.DisplayRole
     ):
         if role == Qt.DisplayRole and orientation == Qt.Horizontal:
             return self.HEADERS[section]
         return None
-    
+
     def flags(self, index: QModelIndex):
         return Qt.ItemIsEnabled | Qt.ItemIsSelectable
 
@@ -69,24 +71,24 @@ class ObservationsTableView(QTableView):
     
     Настроено на работу с ObservationsModel.
     """
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        
+
         # Установка модели по умолчанию
         self.setModel(ObservationsModel())
-        
+
         # Настройка внешнего вида
         self.setAlternatingRowColors(True)
         self.setSortingEnabled(True)
         self.setSelectionBehavior(QTableView.SelectRows)
         self.setEditTriggers(QTableView.NoEditTriggers)
-        
+
         # Настройка заголовков
         self.verticalHeader().setVisible(False)
         self.horizontalHeader().setStretchLastSection(True)
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        
+
         # Стиль
         self.setStyleSheet("""
             QTableView {
@@ -104,7 +106,7 @@ class ObservationsTableView(QTableView):
                 font-weight: bold;
             }
         """)
-    
+
     def set_observations(self, observations: List):
         """Удобный метод для обновления данных"""
         self.model().update_data(observations)

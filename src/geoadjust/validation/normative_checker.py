@@ -1,7 +1,9 @@
 """Нормативный контроль результатов уравнивания по СП 11-104-97"""
 from dataclasses import dataclass
 from typing import Dict, List, Optional
+
 from loguru import logger
+
 
 @dataclass
 class LevelingClassSpec:
@@ -22,7 +24,7 @@ CLASS_SPECS = {
 
 class NormativeChecker:
     """Проверка результатов уравнивания на соответствие нормативам"""
-    
+
     @staticmethod
     def check_leveling_network(
         sigma_0_m: float,
@@ -45,20 +47,20 @@ class NormativeChecker:
             Dict: Результаты проверки с флагами соответствия
         """
         spec = CLASS_SPECS.get(class_code, CLASS_SPECS["4"])
-        
+
         # Расчёт фактических значений
         sigma_0_mm_km = (sigma_0_m * 1000) / max(route_length_km ** 0.5, 0.001)
         closure_mm = closure_m * 1000
         closure_limit_mm = spec.max_closure_mm_per_km * (route_length_km ** 0.5)
-        
+
         # Проверка по пунктам
         point_errors_ok = True
         if point_errors_m:
             point_errors_ok = all(
-                e * 1000 <= spec.max_point_error_mm 
+                e * 1000 <= spec.max_point_error_mm
                 for e in point_errors_m
             )
-        
+
         results = {
             "class_name": spec.name,
             "class_code": class_code,
@@ -66,8 +68,8 @@ class NormativeChecker:
             "closure_ok": abs(closure_mm) <= closure_limit_mm,
             "point_errors_ok": point_errors_ok,
             "all_ok": (
-                results["sigma_0_ok"] and 
-                results["closure_ok"] and 
+                results["sigma_0_ok"] and
+                results["closure_ok"] and
                 results["point_errors_ok"]
             ),
             # Детальные значения для отчёта
@@ -78,7 +80,7 @@ class NormativeChecker:
             "max_point_error_mm": round(max(point_errors_m or [0]) * 1000, 2),
             "point_error_limit_mm": spec.max_point_error_mm,
         }
-        
+
         # Логирование результатов
         status = "✅" if results["all_ok"] else "⚠️"
         logger.info(
@@ -86,9 +88,9 @@ class NormativeChecker:
             f"σ₀={results['sigma_0_mm_km']} мм/√км (допуск ≤{spec.max_sigma_0_mm_per_km}), "
             f"f={results['closure_mm']} мм (допуск ±{results['closure_limit_mm']})"
         )
-        
+
         return results
-    
+
     @staticmethod
     def get_tolerance_for_class(class_code: str, parameter: str) -> float:
         """
@@ -102,7 +104,7 @@ class NormativeChecker:
             float: Предельное значение
         """
         spec = CLASS_SPECS.get(class_code, CLASS_SPECS["4"])
-        
+
         if parameter == "sigma_0":
             return spec.max_sigma_0_mm_per_km
         elif parameter == "closure":

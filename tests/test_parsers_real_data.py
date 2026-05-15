@@ -25,12 +25,14 @@ def main():
         from geoadjust.io.formats.gsi import GSIParser
         from geoadjust.io.formats.sdr import SDRParser
         from geoadjust.io.formats.dat import DATParser
+        from geoadjust.io.formats.pos import POSParser
 
         # Создаем парсеры
         parsers = {
             'GSI': GSIParser(),
             'SDR': SDRParser(),
             'DAT': DATParser(),
+            'POS': POSParser(),
         }
 
         # Расширения файлов для каждого парсера
@@ -38,6 +40,7 @@ def main():
             'GSI': ['.gsi', '.GSI'],
             'SDR': ['.sdr', '.SDR'],
             'DAT': ['.dat', '.DAT'],
+            'POS': ['.pos', '.POS'],
         }
 
         # Находим все файлы данных
@@ -77,17 +80,20 @@ def main():
                     # Парсим файл
                     data = parser.parse(PathLibPath(file_path))
 
-                    # Подсчитываем результаты
-                    points_count = len(data.get('points', []))
-                    observations_count = len(data.get('observations', []))
+                    # Подсчитываем результаты (data - это list[Observation])
+                    observations_count = len(data)
+                    # Извлекаем уникальные точки
+                    points = set()
+                    for obs in data:
+                        points.add(obs.station_id)
+                        points.add(obs.target_id)
+                    points_count = len(points)
 
                     print(f"    Результат: {points_count} пунктов, {observations_count} измерений")
 
-                    # Выводим ключи для отладки (только для первого файла каждого типа)
-                    if 'debug_keys' not in locals():
-                        debug_keys = set()
+                    # Выводим информацию для отладки (только для первого файла каждого типа)
                     if str(file_path) not in debug_keys:
-                        print(f"    Ключи в результате: {list(data.keys())}")
+                        print(f"    Тип результата: {type(data).__name__}")
                         debug_keys.add(str(file_path))
 
                     parser_results.append({

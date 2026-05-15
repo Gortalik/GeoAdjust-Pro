@@ -1,12 +1,14 @@
 # src/geoadjust/core/adjustment/equations_builder.py
 """Сборка матриц A и L с валидацией и детальным логированием"""
+import logging
+from typing import Any, Dict, List, Tuple
+
 import numpy as np
 import scipy.sparse as sparse
 from scipy.sparse.linalg import eigsh
-from typing import List, Dict, Tuple, Optional, Any
+
 from geoadjust.core.adjustment.weights import InstrumentSpec, ObsType
 from geoadjust.io.base import Observation
-import logging
 
 logger = logging.getLogger("geoadjust.equations_builder")
 
@@ -26,36 +28,36 @@ def check_rank_sparse(N_sparse: sparse.spmatrix, tol: float = 1e-10) -> int:
     n = N_sparse.shape[0]
     if n == 0:
         return 0
-    
+
     try:
         # Для небольших матриц (< 100) можно использовать плотный метод
         if n < 100:
             return np.linalg.matrix_rank(N_sparse.toarray(), tol=tol)
-        
+
         # Оцениваем количество собственных значений
         k = min(n - 1, max(10, n // 10))
-        
+
         # Находим максимальные собственные значения
         try:
             eigenvalues_max = eigsh(N_sparse, k=k, which='LM', return_eigenvectors=False, tol=1e-6)
             # Считаем сколько больше порога
             rank_estimate = np.sum(eigenvalues_max > tol)
-            
-            # Если все найденные собственные значения больше порога, 
+
+            # Если все найденные собственные значения больше порога,
             # проверяем минимальные для уточнения
             if rank_estimate == k:
                 try:
-                    eigenvalues_min = eigsh(N_sparse, k=min(k, n//2), which='SM', sigma=tol, 
+                    eigenvalues_min = eigsh(N_sparse, k=min(k, n//2), which='SM', sigma=tol,
                                            return_eigenvectors=False, tol=1e-6)
                     rank_estimate = np.sum(eigenvalues_min > tol)
                 except Exception:
                     pass
-            
+
             return rank_estimate
         except Exception:
             # Fallback для случаев когда eigsh не сходится
             return np.linalg.matrix_rank(N_sparse.toarray(), tol=tol)
-            
+
     except Exception as e:
         logger.warning(f"Не удалось вычислить ранг через sparse методы: {e}. Использую fallback.")
         return np.linalg.matrix_rank(N_sparse.toarray(), tol=tol)
@@ -75,7 +77,7 @@ def check_cond_sparse(N_sparse: sparse.spmatrix, tol: float = 1e-12) -> float:
     n = N_sparse.shape[0]
     if n == 0:
         return float('inf')
-    
+
     try:
         # Для небольших матриц используем плотный метод
         if n < 100:
@@ -84,17 +86,17 @@ def check_cond_sparse(N_sparse: sparse.spmatrix, tol: float = 1e-12) -> float:
                 return np.linalg.cond(N_dense)
             except Exception:
                 return float('inf')
-        
+
         # Находим максимальное собственное значение
         try:
             sigma_max = eigsh(N_sparse, k=1, which='LM', return_eigenvectors=False, tol=1e-6)[0]
         except Exception:
             return float('inf')
-        
+
         # Находим минимальное собственное значение
         try:
             # Используем shift-invert для нахождения минимального собственного значения
-            sigma_min_array = eigsh(N_sparse, k=1, which='SM', sigma=tol, 
+            sigma_min_array = eigsh(N_sparse, k=1, which='SM', sigma=tol,
                                    return_eigenvectors=False, tol=1e-6)
             sigma_min = sigma_min_array[0]
         except Exception:
@@ -104,12 +106,12 @@ def check_cond_sparse(N_sparse: sparse.spmatrix, tol: float = 1e-12) -> float:
                 sigma_min = max(tol, trace / n)
             except Exception:
                 return float('inf')
-        
+
         if sigma_min <= tol or sigma_max <= tol:
             return float('inf')
-        
+
         return sigma_max / sigma_min
-        
+
     except Exception as e:
         logger.warning(f"Не удалось вычислить число обусловленности: {e}")
         return float('inf')
@@ -142,7 +144,7 @@ class EquationsBuilder:
         logger.info("═" * 60)
         logger.info("Начало построения уравнений поправок")
         logger.info(f"Входные данные: {len(observations)} измерений, {len(point_indices)} пунктов")
-        
+
         self._reset()
         self.point_to_idx = point_indices.copy()
         self.param_count = len(point_indices)
@@ -159,11 +161,11 @@ class EquationsBuilder:
 
                 self._add_equation(obs, approximate_coords)
                 obs_processed += 1
-                
+
                 # Логирование каждого 50-го измерения для читаемости
                 if idx % 50 == 0 or idx == len(observations):
                     logger.debug(f"  → Обработано: {idx}/{len(observations)}")
-                    
+
             except Exception as e:
                 err_msg = f"[ОШИБКА {idx}] Измерение {getattr(obs, 'obs_id', '?')}: {str(e)}"
                 logger.error(err_msg)
@@ -175,12 +177,12 @@ class EquationsBuilder:
         if n_equations == 0:
             A = sparse.csr_matrix((0, self.param_count))
         else:
-            A = sparse.csr_matrix((self.data, (self.rows, self.cols)), 
+            A = sparse.csr_matrix((self.data, (self.rows, self.cols)),
                                   shape=(n_equations, self.param_count))
         L = np.array(self.L, dtype=np.float64)
 
         logger.info(f"Сборка завершена. Успешно: {obs_processed}, Пропущено: {obs_skipped}, Ошибок: {len(errors)}")
-        
+
         # Валидация перед передачей в уравниватель
         validation = self._validate_system(A, L, point_indices, fixed_points or {})
         return A, L, validation
@@ -190,7 +192,7 @@ class EquationsBuilder:
         self.point_to_idx = {}
         self.param_count = 0
 
-    def _validate_observation(self, obs: Observation, point_indices: Dict[str, int], 
+    def _validate_observation(self, obs: Observation, point_indices: Dict[str, int],
                                approximate_coords: Dict[str, float]) -> bool:
         """Проверка наличия точек и их координат."""
         for attr in ("station_id", "target_id"):
@@ -198,7 +200,7 @@ class EquationsBuilder:
             if not pid or pid not in point_indices:
                 logger.warning(f"Точка '{pid}' отсутствует в сети. Измерение пропущено.")
                 return False
-            
+
             coord = approximate_coords.get(pid)
             if coord is None:
                 logger.warning(f"Приближённая координата точки {pid} = None. Измерение пропущено.")
@@ -212,7 +214,7 @@ class EquationsBuilder:
         """
         # row - это номер текущего уравнения (совпадает с индексом в L)
         row = len(self.L)
-        
+
         if obs.type == ObsType.LEVELING:
             self._add_leveling_equation(obs, approximate_coords, row)
         elif obs.type == ObsType.DISTANCE:
@@ -226,15 +228,15 @@ class EquationsBuilder:
         """Уравнение для нивелирования: h_изм - (H_target - H_station)"""
         h_s = approx.get(obs.station_id, 0.0)
         h_t = approx.get(obs.target_id, 0.0)
-        
+
         # Свободный член: l = h_measured - (H_target_approx - H_station_approx)
         l_i = obs.value - (h_t - h_s)
         self.L.append(l_i)
-        
+
         # Коэффициенты: d(v)/dH_s = -1, d(v)/dH_t = +1
         idx_s = self.point_to_idx.get(obs.station_id)
         idx_t = self.point_to_idx.get(obs.target_id)
-        
+
         # Добавляем коэффициенты только для свободных пунктов (не фиксированных)
         # row - это номер строки (номер уравнения), который должен соответствовать len(self.L) - 1
         if idx_s is not None:
@@ -253,14 +255,14 @@ class EquationsBuilder:
         # Требуется реализация для угловых измерений
         raise NotImplementedError("Уравнения для углов требуют дополнительной реализации")
 
-    def _validate_system(self, A: sparse.csr_matrix, L: np.ndarray, 
+    def _validate_system(self, A: sparse.csr_matrix, L: np.ndarray,
                          point_indices: Dict[str, int], fixed: Dict[str, float]) -> Dict[str, Any]:
         """Проверка ранга, обусловленности и размерностей системы с использованием sparse методов."""
         report = {"status": "PASSED", "checks": {}, "message": "Система валидна"}
 
         n_obs, n_params = A.shape
         report["checks"]["dimensions"] = f"A({n_obs}×{n_params}), L({len(L)})"
-        
+
         if n_obs != len(L):
             return {"status": "FAILED", "message": f"Размерности не совпадают: obs={n_obs} != L={len(L)}"}
         if n_obs == 0:
@@ -270,11 +272,11 @@ class EquationsBuilder:
             # Проверка ранга нормальной матрицы N = A^T A БЕЗ перевода в плотную
             try:
                 N = A.T @ A  # Остаётся разреженной
-                
+
                 # Используем новые sparse методы для больших матриц
                 rank = check_rank_sparse(N, tol=1e-10)
                 report["checks"]["rank"] = f"{rank}/{n_params}"
-                
+
                 defect = n_params - rank
                 if defect == 0:
                     report["message"] = "Ранг полный. Сеть жёстко закреплена."
@@ -291,7 +293,7 @@ class EquationsBuilder:
                     if report["status"] == "PASSED":
                         report["status"] = "WARNING"
                     report["message"] += f" | ⚠️ Плохая обусловленность (cond={cond:.2e})"
-                    
+
             except Exception as e:
                 logger.error(f"Ошибка валидации системы: {e}")
                 report["checks"]["condition_number"] = f"Не вычислено: {str(e)}"

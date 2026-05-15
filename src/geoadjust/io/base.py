@@ -1,9 +1,10 @@
 """Базовые классы и модели данных для импорта наблюдений"""
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import List, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
+from typing import List
+
 
 class ObsType(Enum):
     """Типы геодезических наблюдений"""
@@ -26,7 +27,7 @@ class Observation:
 
 class BaseParser(ABC):
     """Абстрактный базовый класс для всех парсеров"""
-    
+
     @abstractmethod
     def parse(self, file_path: Path) -> List[Observation]:
         """Парсинг файла измерений в список Observation"""

@@ -1,15 +1,17 @@
 """Утилиты для работы с путями и логирования"""
-from pathlib import Path
-from loguru import logger
 import sys
+from pathlib import Path
+
+from loguru import logger
+
 
 def setup_logging(log_dir: Path | str = "logs"):
     """Настройка логирования с ротацией файлов"""
     log_path = Path(log_dir)
     log_path.mkdir(parents=True, exist_ok=True)
-    
+
     logger.remove()  # Убираем stdout по умолчанию
-    
+
     # Логирование в файл с ротацией
     logger.add(
         log_path / "geoadjust_{time:YYYY-MM-DD}.log",
@@ -19,7 +21,7 @@ def setup_logging(log_dir: Path | str = "logs"):
         format="{time:HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
         encoding="utf-8"
     )
-    
+
     # Дублирование в консоль
     logger.add(sys.stderr, level="INFO")
     logger.info(f"Логирование инициализировано: {log_path.absolute()}")

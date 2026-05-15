@@ -1,7 +1,7 @@
 """Утилиты для работы с единицами измерения и безопасного доступа к данным"""
 import math
-from typing import Any, Dict, Union, Optional
-from dataclasses import is_dataclass, asdict
+from dataclasses import asdict, is_dataclass
+from typing import Any, Dict, Optional
 
 # =============================================================================
 # КОНВЕРТАЦИЯ ЕДИНИЦ ИЗМЕРЕНИЯ
@@ -45,12 +45,12 @@ def rad2dms(radians: float) -> tuple:
     total_deg = rad2deg(radians)
     sign = -1 if total_deg < 0 else 1
     total_deg = abs(total_deg)
-    
+
     degrees = int(total_deg)
     minutes_total = (total_deg - degrees) * 60.0
     minutes = int(minutes_total)
     seconds = (minutes_total - minutes) * 60.0
-    
+
     return (sign * degrees, minutes, seconds)
 
 def sec2rad(seconds: float) -> float:
@@ -101,21 +101,21 @@ def safe_get(obj: Any, key: str, default: Any = None) -> Any:
     """
     if obj is None:
         return default
-    
+
     # Попытка доступа как к атрибуту (dataclass, обычный объект)
     if hasattr(obj, key):
         return getattr(obj, key, default)
-    
+
     # Попытка доступа как к словарю
     if isinstance(obj, dict):
         return obj.get(key, default)
-    
+
     # Попытка доступа через __getitem__
     try:
         return obj[key]
     except (TypeError, KeyError, IndexError):
         pass
-    
+
     return default
 
 
@@ -130,10 +130,10 @@ def safe_get_item(obj: Any, key: Any, default: Any = None) -> Any:
     """Безопасный доступ только к элементам словаря/списка"""
     if obj is None:
         return default
-    
+
     if isinstance(obj, dict):
         return obj.get(key, default)
-    
+
     try:
         return obj[key]
     except (TypeError, KeyError, IndexError):
@@ -157,16 +157,16 @@ def to_dict(obj: Any) -> Dict:
     """
     if obj is None:
         return {}
-    
+
     if isinstance(obj, dict):
         return obj.copy()
-    
+
     if is_dataclass(obj) and not isinstance(obj, type):
         return asdict(obj)
-    
+
     if hasattr(obj, '__dict__'):
         return vars(obj).copy()
-    
+
     return {'value': obj}
 
 
@@ -184,16 +184,16 @@ def get_obs_value(obs: Any) -> Optional[float]:
     """
     if obs is None:
         return None
-    
+
     # Пробуем как атрибут
     value = getattr(obs, 'value', None)
     if value is not None:
         return float(value)
-    
+
     # Пробуем как словарь
     if isinstance(obs, dict):
         return obs.get('value')
-    
+
     return None
 
 
@@ -209,18 +209,18 @@ def get_obs_type(obs: Any) -> str:
     """
     if obs is None:
         return 'unknown'
-    
+
     # Для dataclass с Enum типом
     obs_type = getattr(obs, 'type', None)
     if obs_type is not None:
         if hasattr(obs_type, 'value'):  # Enum
             return obs_type.value
         return str(obs_type)
-    
+
     # Для словаря
     if isinstance(obs, dict):
         return obs.get('type', obs.get('obs_type', 'unknown'))
-    
+
     return 'unknown'
 
 
@@ -228,14 +228,14 @@ def get_obs_station(obs: Any) -> str:
     """Безопасное получение имени станции"""
     if obs is None:
         return ''
-    
+
     station = getattr(obs, 'station_id', None)
     if station is not None:
         return str(station)
-    
+
     if isinstance(obs, dict):
         return obs.get('station_id', obs.get('from_point', obs.get('from_point_id', '')))
-    
+
     return ''
 
 
@@ -243,12 +243,12 @@ def get_obs_target(obs: Any) -> str:
     """Безопасное получение имени целевой точки"""
     if obs is None:
         return ''
-    
+
     target = getattr(obs, 'target_id', None)
     if target is not None:
         return str(target)
-    
+
     if isinstance(obs, dict):
         return obs.get('target_id', obs.get('to_point', obs.get('to_point_id', '')))
-    
+
     return ''

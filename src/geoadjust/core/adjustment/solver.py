@@ -1,9 +1,11 @@
 """Разреженный решатель нормальных уравнений с регуляризацией и проверкой ранга"""
+from typing import Optional, Tuple
+
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 from loguru import logger
-from typing import Optional, Tuple
+
 
 def solve_normal_equations(
     A: sp.csr_matrix,
@@ -31,14 +33,14 @@ def solve_normal_equations(
     # Формирование нормальной матрицы N = AᵀPA
     PA = P @ A
     N = (A.T @ PA).tocsc()
-    
+
     # Вектор U = AᵀPL
     PL = P @ L
     U = A.T @ PL
-    
+
     # Решение системы N·dx = U с проверкой ранга и регуляризацией
     dx = _solve_sparse_system(N, U)
-    
+
     # Ковариационная матрица (опционально)
     Q_xx = None
     if compute_covariance:
@@ -46,7 +48,7 @@ def solve_normal_equations(
             Q_xx = _compute_covariance_matrix(N)
         except Exception as e:
             logger.warning(f"Не удалось вычислить ковариационную матрицу: {e}")
-    
+
     return dx, Q_xx
 
 def _check_matrix_rank(A: sp.csr_matrix, tol: float = 1e-10) -> Tuple[bool, int]:
@@ -74,7 +76,7 @@ def _check_matrix_rank(A: sp.csr_matrix, tol: float = 1e-10) -> Tuple[bool, int]
                 # Fallback на оценку по диагонали N
                 diag_N = (A.T @ A).diagonal()
                 rank = np.sum(np.abs(diag_N) > tol)
-        
+
         is_full_rank = rank >= A.shape[1]
         return is_full_rank, int(rank)
     except Exception as e:
@@ -83,11 +85,11 @@ def _check_matrix_rank(A: sp.csr_matrix, tol: float = 1e-10) -> Tuple[bool, int]
 
 def _solve_sparse_system(N: sp.csc_matrix, U: np.ndarray) -> np.ndarray:
     """Решение разреженной системы линейных уравнений с регуляризацией"""
-    
+
     # 1. Проверка на сингулярность через диагональ
     diag_N = N.diagonal()
     min_diag = np.min(np.abs(diag_N))
-    
+
     if min_diag < 1e-12:
         logger.warning(
             f"Матрица N близка к сингулярной (min|diag|={min_diag:.2e}). "
@@ -96,14 +98,14 @@ def _solve_sparse_system(N: sp.csc_matrix, U: np.ndarray) -> np.ndarray:
         # Регуляризация: N_reg = N + λ·I
         lambda_reg = 1e-9
         N = N + lambda_reg * sp.eye(N.shape[0], format="csc")
-    
+
     # 2. Попытка решения через UMFPACK
     try:
         dx = spla.spsolve(N, U, use_umfpack=True)
         return dx
     except Exception as e:
         logger.warning(f"spsolve упал ({e}), переключаюсь на LSQR (итерационный метод)")
-    
+
     # 3. Fallback: итерационный метод LSQR
     try:
         result = spla.lsqr(N, U, atol=1e-12, btol=1e-12)
@@ -144,12 +146,12 @@ def compute_sigma_0(residuals: np.ndarray, P: sp.diags, redundancy: int) -> floa
     if redundancy <= 0:
         logger.warning("Отрицательная или нулевая избыточность, σ₀ не определён")
         return 0.0
-    
+
     vTPv = float((residuals @ P @ residuals).sum())
-    
+
     if vTPv < 0:
         logger.warning(f"Отрицательное vTPv = {vTPv}, проверка весов")
         vTPv = abs(vTPv)
-    
+
     sigma_0 = np.sqrt(vTPv / redundancy)
     return sigma_0

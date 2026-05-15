@@ -1,8 +1,10 @@
 # src/geoadjust/gui/qlog_handler.py
 """Потокобезопасный обработчик логов для PyQt5"""
 import logging
-from PyQt5.QtCore import QObject, pyqtSignal, QDateTime
 from typing import Optional
+
+from PyQt5.QtCore import QDateTime, QObject, pyqtSignal
+
 
 class QLogHandler(logging.Handler, QObject):
     """
@@ -30,6 +32,6 @@ class QLogHandler(logging.Handler, QObject):
     def attach_to_widget(self, text_edit):
         """Привязывает обработчик к QTextEdit в главном окне."""
         self.log_signal.connect(lambda text, level: text_edit.append(text))
-        
+
     def clear(self, text_edit):
         text_edit.clear()

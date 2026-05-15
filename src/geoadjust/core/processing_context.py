@@ -1,9 +1,9 @@
 # src/geoadjust/core/processing_context.py
 """Единый объект-контекст для конвейера обработки"""
-from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional
-from datetime import datetime
 import logging
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("geoadjust.context")
 
@@ -17,14 +17,14 @@ class ProcessingContext:
     points: Dict[str, Any] = field(default_factory=dict)
     fixed_points: Dict[str, float] = field(default_factory=dict)
     config: Dict[str, Any] = field(default_factory=dict)
-    
+
     logs: List[Dict[str, Any]] = field(default_factory=list)
     matrices: Dict[str, Any] = field(default_factory=dict)
     validation_report: Dict[str, Any] = field(default_factory=dict)
-    
+
     status: str = "INIT"
     start_time: datetime = field(default_factory=datetime.now)
-    
+
     def add_log(self, level: str, stage: str, message: str, details: Optional[Dict] = None):
         """Добавляет структурированную запись в журнал и в стандартный логгер."""
         entry = {
@@ -35,7 +35,7 @@ class ProcessingContext:
             "details": details or {}
         }
         self.logs.append(entry)
-        
+
         log_func = getattr(logger, level.lower(), logger.info)
         log_func(f"[{stage}] {message}")
 

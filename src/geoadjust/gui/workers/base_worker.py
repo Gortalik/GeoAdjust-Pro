@@ -1,6 +1,7 @@
 """Базовый класс для фоновых воркеров PyQt5"""
-from PyQt5.QtCore import QThread, pyqtSignal
 from loguru import logger
+from PyQt5.QtCore import QThread, pyqtSignal
+
 
 class BaseWorker(QThread):
     """
@@ -18,11 +19,11 @@ class BaseWorker(QThread):
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
     log_message = pyqtSignal(str)
-    
+
     def __init__(self):
         super().__init__()
         self.is_running = True
-    
+
     def run(self):
         """Шаблонный метод выполнения задачи"""
         try:
@@ -33,11 +34,11 @@ class BaseWorker(QThread):
             self.error.emit(str(e))
         finally:
             self.is_running = False
-    
+
     def _do_work(self):
         """Переопределить в подклассе для выполнения работы"""
         raise NotImplementedError("Подкласс должен реализовать _do_work()")
-    
+
     def stop(self):
         """Безопасная остановка воркера"""
         self.is_running = False
