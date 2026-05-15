@@ -1,12 +1,13 @@
 """Главное окно приложения GeoAdjust Pro"""
 import sys
+import logging
 from pathlib import Path
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QProgressBar, QLabel, QSplitter,
     QGroupBox, QFileDialog, QMessageBox, QTextEdit
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from loguru import logger
 
 from geoadjust.gui.widgets.observations_table import ObservationsTableView, ObservationsModel
@@ -18,6 +19,27 @@ from geoadjust.io.sdr import SDRParser
 from geoadjust.io.office import OfficeParser
 from geoadjust.io.validators import validate_and_clean
 from geoadjust.gui.reporting.exporter import ReportExporter
+from geoadjust.gui.qlog_handler import QLogHandler
+from geoadjust.core.processing_context import ProcessingContext
+from geoadjust.processing_pipeline import ProcessingPipeline
+
+
+class PipelineWorker(QThread):
+    """Фоновый воркер для запуска конвейера обработки"""
+    finished = pyqtSignal(ProcessingContext)
+    error = pyqtSignal(str)
+    
+    def __init__(self, ctx: ProcessingContext):
+        super().__init__()
+        self.ctx = ctx
+        
+    def run(self):
+        try:
+            pipeline = ProcessingPipeline()
+            result = pipeline.run(self.ctx)
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class MainWindow(QMainWindow):
@@ -33,6 +55,12 @@ class MainWindow(QMainWindow):
         self.worker: AdjustmentWorker = None
         self.obs_model = ObservationsModel()
         self._current_observations = []
+        
+        # Настройка логгера для GUI
+        self.log_handler = QLogHandler()
+        self.log_handler.attach_to_widget(self.log_text)
+        logging.getLogger("geoadjust").addHandler(self.log_handler)
+        logging.getLogger("geoadjust").setLevel(logging.DEBUG)
         
         self._setup_ui()
         self._connect_signals()
@@ -157,7 +185,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Ошибка", str(e))
 
     def start_adjustment(self):
-        """Запуск уравнивания в фоновом потоке"""
+        """Запуск уравнивания в фоновом потоке с использованием нового конвейера"""
         if self.worker and self.worker.isRunning():
             return
             
@@ -168,10 +196,56 @@ class MainWindow(QMainWindow):
         self.btn_adjust.setEnabled(False)
         self.progress.setVisible(True)
         self.progress.setValue(0)
-        self.status_label.setText("Вычисление нормальных уравнений...")
+        self.status_label.setText("⏳ Запуск конвейера обработки...")
+        
+        self._append_log("🚀 Запуск нового конвейера обработки с валидацией")
 
+        # Создание контекста обработки
+        ctx = ProcessingContext(
+            observations=self._current_observations,
+            points={},  # Заполняется в конвейере
+            fixed_points={},  # В реальном приложении брать из диалога
+            config={"spec": self.engine.spec}
+        )
+        
+        # Создание и запуск воркера конвейера
+        self.pipeline_worker = PipelineWorker(ctx)
+        self.pipeline_worker.finished.connect(self.on_pipeline_finished)
+        self.pipeline_worker.error.connect(self.on_pipeline_error)
+        self.pipeline_worker.start()
+
+    def on_pipeline_finished(self, ctx: ProcessingContext):
+        """Обработка результатов конвейера"""
+        self.progress.setVisible(False)
+        
+        if ctx.status == "READY":
+            self.status_label.setText("✅ Система валидна. Запуск уравнивателя...")
+            self._append_log(f"✅ Конвейер завершён. Статус: {ctx.status}")
+            self._append_log(f"📊 Матрицы: A{ctx.matrices['A'].shape}, L={len(ctx.matrices['L'])}, P{ctx.matrices['P'].shape}")
+            self._append_log(f"📈 Ранг: {ctx.validation_report.get('rank', 'N/A')}, Обусловленность: {ctx.validation_report.get('condition_number', 'N/A')}")
+            
+            # Запуск основного уравнивания через существующий AdjustmentWorker
+            self.btn_adjust.setEnabled(True)
+            self._run_legacy_adjustment(ctx)
+        else:
+            self.status_label.setText(f"❌ Конвейер остановлен: {ctx.status}")
+            self._append_log(f"❌ Конвейер остановлен: {ctx.status}")
+            self._append_log(f"📋 Отчёт валидации: {ctx.validation_report}")
+            self.btn_adjust.setEnabled(True)
+            QMessageBox.warning(self, "Ошибка валидации", f"Конвейер обработки остановлен.\nСтатус: {ctx.status}\n\nДетали: {ctx.validation_report}")
+
+    def on_pipeline_error(self, msg: str):
+        """Ошибка выполнения конвейера"""
+        self.progress.setVisible(False)
+        self.btn_adjust.setEnabled(True)
+        self._append_log(f"⛔ Ошибка конвейера: {msg}")
+        self.status_label.setText("Ошибка выполнения")
+        QMessageBox.critical(self, "Критическая ошибка", msg)
+
+    def _run_legacy_adjustment(self, ctx: ProcessingContext):
+        """Запуск уравнивания через существующий AdjustmentEngine"""
         # Фиксированные пункты (в реальном GUI берутся из диалога)
-        fixed_points = {} 
+        fixed_points = ctx.fixed_points
 
         # Создание и запуск воркера
         self.worker = AdjustmentWorker(
