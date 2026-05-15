@@ -2,6 +2,7 @@ pyproject.toml
 src/geoadjust/__init__.py
 src/geoadjust/__main__.py
 src/geoadjust/cli.py
+src/geoadjust/processing_pipeline.py
 src/geoadjust.egg-info/PKG-INFO
 src/geoadjust.egg-info/SOURCES.txt
 src/geoadjust.egg-info/dependency_links.txt
@@ -9,14 +10,17 @@ src/geoadjust.egg-info/entry_points.txt
 src/geoadjust.egg-info/requires.txt
 src/geoadjust.egg-info/top_level.txt
 src/geoadjust/core/__init__.py
+src/geoadjust/core/processing_context.py
 src/geoadjust/core/adjustment/__init__.py
 src/geoadjust/core/adjustment/engine.py
 src/geoadjust/core/adjustment/equations.py
+src/geoadjust/core/adjustment/equations_builder.py
 src/geoadjust/core/adjustment/free_adjustment.py
 src/geoadjust/core/adjustment/solver.py
 src/geoadjust/core/adjustment/weights.py
 src/geoadjust/gui/__init__.py
 src/geoadjust/gui/main_window.py
+src/geoadjust/gui/qlog_handler.py
 src/geoadjust/gui/reporting/__init__.py
 src/geoadjust/gui/reporting/exporter.py
 src/geoadjust/gui/widgets/__init__.py
