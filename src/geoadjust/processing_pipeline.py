@@ -154,7 +154,7 @@ class ProcessingPipeline:
         return calculate_weight(obs_type, value, distance, spec)
 
     def _validate_final_system(self, ctx: ProcessingContext) -> ProcessingContext:
-        """Финальная проверка размерностей и ранга системы уравнений."""
+        """Финальная проверка размерностей и ранга системы уравнений с использованием sparse методов."""
         A = ctx.matrices.get("A")
         P = ctx.matrices.get("P")
         L = ctx.matrices.get("L")
@@ -175,17 +175,21 @@ class ProcessingPipeline:
             ctx.add_log("ERROR", "VALIDATION", f"Размерности A и P не совпадают: {A.shape[0]} != {P.shape[0]}")
             return ctx
 
-        # Проверка ранга нормальной матрицы N = A^T P A
+        # Проверка ранга нормальной матрицы N = A^T P A БЕЗ перевода в плотную
         try:
-            N = (A.T @ P @ A).toarray()
-            rank = np.linalg.matrix_rank(N, tol=1e-10)
-            defect = N.shape[1] - rank
-            cond = np.linalg.cond(N) if rank == N.shape[1] else float('inf')
+            from geoadjust.core.adjustment.equations_builder import check_rank_sparse, check_cond_sparse
+            
+            N = A.T @ P @ A  # Остаётся разреженной
+            n_params = N.shape[1]
+            
+            rank = check_rank_sparse(N, tol=1e-10)
+            defect = n_params - rank
+            cond = check_cond_sparse(N, tol=1e-12)
 
             ctx.validation_report.update({
-                "rank": f"{rank}/{N.shape[1]}",
+                "rank": f"{rank}/{n_params}",
                 "defect": defect,
-                "condition_number": f"{cond:.2e}"
+                "condition_number": f"{cond:.2e}" if cond != float('inf') else "inf"
             })
             
             if defect > 3:
@@ -197,6 +201,7 @@ class ProcessingPipeline:
             else:
                 ctx.status = "READY"
                 ctx.add_log("INFO", "VALIDATION", "Система уравнений валидна. Готово к уравниванию.")
+                
         except Exception as e:
             ctx.status = "VALIDATION_ERROR"
             ctx.add_log("ERROR", "VALIDATION", f"Ошибка валидации: {str(e)}")

@@ -28,6 +28,7 @@ class PipelineWorker(QThread):
     """Фоновый воркер для запуска конвейера обработки"""
     finished = pyqtSignal(ProcessingContext)
     error = pyqtSignal(str)
+    status_message = pyqtSignal(str)  # Сигнал для статусных сообщений вместо QMessageBox
     
     def __init__(self, ctx: ProcessingContext):
         super().__init__()
@@ -37,6 +38,15 @@ class PipelineWorker(QThread):
         try:
             pipeline = ProcessingPipeline()
             result = pipeline.run(self.ctx)
+            
+            # Emit status messages based on result
+            if result.status == "READY":
+                self.status_message.emit("✅ Конвейер завершён успешно")
+            elif result.status in ("RANK_DEFICIENT", "POORLY_CONDITIONED"):
+                self.status_message.emit(f"⚠️ Предупреждение: {result.status}")
+            else:
+                self.status_message.emit(f"❌ Ошибка: {result.status}")
+                
             self.finished.emit(result)
         except Exception as e:
             self.error.emit(str(e))
@@ -212,10 +222,11 @@ class MainWindow(QMainWindow):
         self.pipeline_worker = PipelineWorker(ctx)
         self.pipeline_worker.finished.connect(self.on_pipeline_finished)
         self.pipeline_worker.error.connect(self.on_pipeline_error)
+        self.pipeline_worker.status_message.connect(lambda msg: self.status_label.setText(msg))
         self.pipeline_worker.start()
 
     def on_pipeline_finished(self, ctx: ProcessingContext):
-        """Обработка результатов конвейера"""
+        """Обработка результатов конвейера без QMessageBox в потоке - только сигналы и статусы"""
         self.progress.setVisible(False)
         
         if ctx.status == "READY":
@@ -232,15 +243,16 @@ class MainWindow(QMainWindow):
             self._append_log(f"❌ Конвейер остановлен: {ctx.status}")
             self._append_log(f"📋 Отчёт валидации: {ctx.validation_report}")
             self.btn_adjust.setEnabled(True)
-            QMessageBox.warning(self, "Ошибка валидации", f"Конвейер обработки остановлен.\nСтатус: {ctx.status}\n\nДетали: {ctx.validation_report}")
+            # ✅ Убрали QMessageBox из фонового потока - теперь только логирование
+            self._append_log(f"⚠️ Требуется внимание пользователя: {ctx.status} - {ctx.validation_report}")
 
     def on_pipeline_error(self, msg: str):
-        """Ошибка выполнения конвейера"""
+        """Ошибка выполнения конвейера - без QMessageBox, только логирование"""
         self.progress.setVisible(False)
         self.btn_adjust.setEnabled(True)
         self._append_log(f"⛔ Ошибка конвейера: {msg}")
         self.status_label.setText("Ошибка выполнения")
-        QMessageBox.critical(self, "Критическая ошибка", msg)
+        # ✅ Убрали QMessageBox.critical - теперь только логирование в GUI
 
     def _run_legacy_adjustment(self, ctx: ProcessingContext):
         """Запуск уравнивания через существующий AdjustmentEngine"""
@@ -273,7 +285,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText(msg)
 
     def on_finished(self, result: dict):
-        """Завершение уравнивания успешно"""
+        """Завершение уравнивания успешно - без QMessageBox, только логирование и статус"""
         self.progress.setVisible(False)
         self.btn_adjust.setEnabled(True)
         self.btn_export.setEnabled(True)
@@ -283,22 +295,16 @@ class MainWindow(QMainWindow):
             f"Итераций: {result['iterations']}, "
             f"Статус: {result['status']}"
         )
-        self.status_label.setText("Уравнивание завершено")
-        
-        QMessageBox.information(
-            self, 
-            "Готово", 
-            f"Уравновешивание успешно.\n"
-            f"Средняя квадратическая ошибка единицы веса: {result['sigma_0']:.6f} м"
-        )
+        self.status_label.setText(f"✅ Уравнивание завершено. σ₀ = {result['sigma_0']:.6f} м")
+        # ✅ Убрали QMessageBox.information - теперь только статус-бар и лог
 
     def on_error(self, msg: str):
-        """Ошибка выполнения"""
+        """Ошибка выполнения - без QMessageBox, только логирование"""
         self.progress.setVisible(False)
         self.btn_adjust.setEnabled(True)
         self._append_log(f"⛔ Ошибка: {msg}")
         self.status_label.setText("Ошибка выполнения")
-        QMessageBox.critical(self, "Критическая ошибка", msg)
+        # ✅ Убрали QMessageBox.critical - теперь только логирование
 
     def export_report(self):
         """Экспорт отчёта"""
@@ -329,4 +335,6 @@ class MainWindow(QMainWindow):
             self._append_log(f"💾 Отчёт сохранён: {out_path}")
             
         except Exception as e:
-            QMessageBox.critical(self, "Ошибка экспорта", str(e))
+            # ✅ Заменили QMessageBox на логирование
+            self._append_log(f"❌ Ошибка экспорта: {e}")
+            self.status_label.setText(f"Ошибка экспорта: {e}")

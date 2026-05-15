@@ -43,9 +43,33 @@ geoadjust = "geoadjust.__main__:main"
 where = ["src"]
 
 [tool.pytest.ini_options]
+minversion = "7.0"
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-v --tb=short --cov=geoadjust"
+addopts = [
+    "-ra",
+    "-q",
+    "--strict-markers",
+    "--tb=short",
+    "--cov=src/geoadjust",
+    "--cov-report=term-missing",
+    "--cov-report=html:coverage_html"
+]
+markers = [
+    "slow: длительные тесты",
+    "gui: требует отрисовки",
+    "math: математическое ядро"
+]
+
+[tool.coverage.run]
+source = ["src/geoadjust"]
+omit = ["*/__pycache__/*", "*/tests/*", "*/gui/debug_*"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if __name__ == .__main__.:", "raise NotImplementedError"]
+show_missing = true
+fail_under = 75.0
 
 [tool.ruff]
 line-length = 100
