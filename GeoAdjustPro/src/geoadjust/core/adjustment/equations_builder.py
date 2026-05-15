@@ -42,7 +42,7 @@ class EquationsBuilder:
         observations: List[Observation],
         points: Dict[str, NetworkPoint],
         fixed_points: List[str] = None
-    ) -> Tuple[sparse.csr_matrix, np.ndarray]:
+    ) -> Tuple[sparse.csr_matrix, np.ndarray, Dict]:
         """
         Построение полной матрицы коэффициентов уравнений поправок.
         
@@ -63,13 +63,16 @@ class EquationsBuilder:
             - u - число неизвестных (параметров)
         L : np.ndarray
             Вектор свободных членов (размерность n)
+        validation : Dict
+            Отчёт о валидации системы (статус, ранг, обусловленность)
         
         Пример:
         -------
         >>> builder = EquationsBuilder()
-        >>> A, L = builder.build_adjustment_matrix(observations, points, fixed_points=['P1', 'P2'])
+        >>> A, L, validation = builder.build_adjustment_matrix(observations, points, fixed_points=['P1', 'P2'])
         >>> print(f"Матрица А: {A.shape[0]}×{A.shape[1]}")
         >>> print(f"Вектор L: {len(L)}")
+        >>> print(f"Статус валидации: {validation['status']}")
         """
         if fixed_points is None:
             fixed_points = []
@@ -116,8 +119,11 @@ class EquationsBuilder:
         
         obs_index = 0
         skipped_count = 0
+        errors = []
 
-        self.logger.info(f"Processing {len(observations)} observations")
+        self.logger.info("=" * 60)
+        self.logger.info("Начало построения уравнений поправок")
+        self.logger.info(f"Входные данные: {len(observations)} измерений, {len(points)} пунктов")
         for obs in observations:
             self.logger.debug(f"Processing observation {obs.obs_id}: type={obs.obs_type}, active={obs.is_active}, from={obs.from_point_id}, to={obs.to_point_id}")
             if not obs.is_active:
@@ -285,7 +291,76 @@ class EquationsBuilder:
         self.logger.info(f"Вектор свободных членов L: {len(L)}")
         self.logger.info(f"Пропущено измерений: {skipped_count}")
         
-        return A, L
+        # Валидация системы перед возвратом
+        validation = self._validate_system(A, L, points, fixed_points)
+        
+        return A, L, validation
+    
+    def _validate_system(self, A: sparse.csr_matrix, L: np.ndarray, 
+                         points: Dict[str, NetworkPoint], fixed: List[str]) -> Dict:
+        """
+        Проверка валидности собранной системы уравнений.
+        
+        Параметры:
+        -----------
+        A : sparse.csr_matrix
+            Матрица коэффициентов
+        L : np.ndarray
+            Вектор свободных членов
+        points : Dict[str, NetworkPoint]
+            Словарь пунктов
+        fixed : List[str]
+            Список исходных пунктов
+        
+        Возвращает:
+        ------------
+        report : Dict
+            Отчёт о валидации со статусом и деталями проверок
+        """
+        report = {"status": "PASSED", "checks": {}, "message": "Система валидна"}
+
+        n_obs, n_params = A.shape
+        report["checks"]["dimensions"] = f"A({n_obs}×{n_params}), L({len(L)})"
+        
+        # Проверка соответствия размерностей
+        if n_obs != len(L):
+            return {"status": "FAILED", "message": f"Размерности не совпадают: obs={n_obs} != L={len(L)}"}
+        if n_obs == 0:
+            return {"status": "FAILED", "message": "Нет измерений для уравнивания"}
+
+        # Проверка ранга нормальной матрицы
+        if n_params > 0:
+            try:
+                N = (A.T @ A).toarray()
+                rank = np.linalg.matrix_rank(N, tol=1e-12)
+                report["checks"]["rank"] = f"{rank}/{n_params}"
+                
+                defect = n_params - rank
+                if defect == 0:
+                    report["message"] = "Ранг полный. Сеть жёстко закреплена."
+                elif defect <= 3:
+                    report["message"] = f"⚠️ Свободная сеть (дефект ранга: {defect}). Требуется внутреннее/внешнее закрепление или S-преобразование."
+                else:
+                    report["status"] = "FAILED"
+                    report["message"] = f"❌ Критический дефект ранга: {defect}. Проверьте исходные пункты и связность."
+
+                # Проверка обусловленности
+                try:
+                    cond = np.linalg.cond(N)
+                    report["checks"]["condition_number"] = f"{cond:.2e}"
+                    if cond > 1e14:
+                        if report["status"] != "FAILED":
+                            report["status"] = "WARNING"
+                        report["message"] += f" | ⚠️ Плохая обусловленность (cond={cond:.2e})"
+                except Exception:
+                    report["checks"]["condition_number"] = "Не вычислено (сингулярная матрица)"
+            except Exception as e:
+                report["status"] = "ERROR"
+                report["message"] = f"Ошибка проверки ранга: {str(e)}"
+        else:
+            report["checks"]["rank"] = "N/A (все точки фиксированы)"
+
+        return report
     
     def _build_direction_equation(
         self,

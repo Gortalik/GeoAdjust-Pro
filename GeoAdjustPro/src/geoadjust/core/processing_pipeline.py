@@ -176,7 +176,7 @@ class ProcessingPipeline:
         self.logger.info("  Построение матрицы коэффициентов уравнений поправок...")
         
         try:
-            A, L = self.equations_builder.build_adjustment_matrix(
+            A, L, validation = self.equations_builder.build_adjustment_matrix(
                 observations=processed_observations,
                 points=all_points,
                 fixed_points=fixed_point_ids
@@ -184,6 +184,15 @@ class ProcessingPipeline:
             
             self.logger.info(f"  ✓ Матрица А: {A.shape[0]}×{A.shape[1]}")
             self.logger.info(f"  ✓ Вектор свободных членов L: {len(L)}")
+            self.logger.info(f"  ✓ Статус валидации: {validation['status']}")
+            self.logger.info(f"  → {validation['message']}")
+            
+            # Проверка статуса валидации
+            if validation["status"] == "FAILED":
+                self.logger.error(f"Критическая ошибка валидации: {validation['message']}")
+                raise ValueError(validation['message'])
+            elif validation["status"] == "WARNING":
+                self.logger.warning(f"Предупреждение валидации: {validation['message']}")
             
         except Exception as e:
             self.logger.error(f"Ошибка при построении матрицы А: {e}", exc_info=True)
@@ -335,13 +344,15 @@ class ProcessingPipeline:
         # Этап 2: Построение матрицы коэффициентов
         self.logger.info("\n[ЭТАП 2] Построение матрицы коэффициентов")
         
-        A, L = self.equations_builder.build_adjustment_matrix(
+        A, L, validation = self.equations_builder.build_adjustment_matrix(
             observations=processed_observations,
             points=initial_approximate_points,
             fixed_points=[]  # Нет исходных пунктов
         )
         
         self.logger.info(f"  ✓ Матрица А: {A.shape[0]}×{A.shape[1]}")
+        self.logger.info(f"  ✓ Статус валидации: {validation['status']}")
+        self.logger.info(f"  → {validation['message']}")
         
         # Этап 3: Формирование весовой матрицы
         self.logger.info("\n[ЭТАП 3] Формирование весовой матрицы")
