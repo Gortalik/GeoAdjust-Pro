@@ -1,30 +1,71 @@
 """
 Виджет журнала событий для GeoAdjust Pro
+
+Обеспечивает потокобезопасное логирование в GUI через PyQt5 сигналы.
+Поддерживает фильтрацию по уровням, цветовое кодирование и сохранение.
 """
 
 import logging
+from datetime import datetime
+from typing import Optional
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QHBoxLayout, QPushButton
-from PyQt5.QtCore import Qt, pyqtSignal, QObject
+from PyQt5.QtCore import Qt, pyqtSignal, QObject, QDateTime
 from PyQt5.QtGui import QTextCursor, QColor
 
 
-class QtLogHandler(logging.Handler, QObject):
-    """Обработчик логов для Qt виджета"""
+class QLogHandler(logging.Handler, QObject):
+    """
+    Потокобезопасный обработчик логов для PyQt5.
     
-    log_signal = pyqtSignal(str, str)  # message, level
+    Перехватывает записи Python logging и передаёт их в GUI через сигналы.
+    Работает в любых потоках без блокировки интерфейса.
     
-    def __init__(self):
+    Сигналы:
+    ---------
+    log_signal : pyqtSignal(str, str)
+        Сигнал с форматированным сообщением и уровнем (text, level)
+    """
+    log_signal = pyqtSignal(str, str)  # (formatted_text, level)
+
+    def __init__(self, parent: Optional[QObject] = None):
         logging.Handler.__init__(self)
-        QObject.__init__(self)
+        QObject.__init__(self, parent)
         
-    def emit(self, record):
-        """Отправка лог-записи"""
+        # Формат с точным временем
+        self.setFormatter(logging.Formatter(
+            '[%(asctime)s] [%(levelname)-8s] %(message)s',
+            datefmt='%H:%M:%S'
+        ))
+
+    def emit(self, record: logging.LogRecord):
+        """
+        Эмитент записи лога.
+        
+        Форматирует запись и отправляет через pyqtSignal в главный поток.
+        """
         try:
             msg = self.format(record)
-            level = record.levelname
-            self.log_signal.emit(msg, level)
+            # Добавляем таймстамп GUI для точности до миллисекунд
+            gui_ts = QDateTime.currentDateTime().toString("HH:mm:ss.zzz")
+            formatted = f"[{gui_ts}] {msg}"
+            self.log_signal.emit(formatted, record.levelname)
         except Exception:
             self.handleError(record)
+
+    def attach_to_widget(self, text_edit: QTextEdit):
+        """
+        Привязывает обработчик к QTextEdit в главном окне.
+        
+        Параметры:
+        -----------
+        text_edit : QTextEdit
+            Виджет для отображения логов
+        """
+        self.log_signal.connect(lambda text, level: text_edit.append(text))
+        
+    def clear(self, text_edit: QTextEdit):
+        """Очищает виджет логов"""
+        text_edit.clear()
 
 
 class LogWidget(QWidget):
@@ -95,12 +136,13 @@ class LogWidget(QWidget):
     
     def _setup_logging(self):
         """Настройка перехвата логов Python"""
-        self.log_handler = QtLogHandler()
+        self.log_handler = QLogHandler()
         self.log_handler.log_signal.connect(self._handle_log_message)
         
-        # Добавление обработчика к корневому логгеру
-        root_logger = logging.getLogger()
-        root_logger.addHandler(self.log_handler)
+        # Добавление обработчика к логгеру geoadjust
+        geoadjust_logger = logging.getLogger("geoadjust")
+        geoadjust_logger.addHandler(self.log_handler)
+        geoadjust_logger.setLevel(logging.DEBUG)
         
         # Форматирование
         formatter = logging.Formatter('%(name)s - %(message)s')
@@ -112,8 +154,6 @@ class LogWidget(QWidget):
     
     def log_message(self, message: str, level: str = "INFO"):
         """Добавление сообщения в журнал"""
-        from datetime import datetime
-        
         timestamp = datetime.now().strftime("%H:%M:%S")
         
         # Определение цвета по уровню
