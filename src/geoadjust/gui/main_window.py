@@ -74,13 +74,13 @@ class MainWindow(QMainWindow):
         self.obs_model = ObservationsModel()
         self._current_observations = []
 
-        # Настройка логгера для GUI
+        self._setup_ui()
+
+        # Настройка логгера для GUI (после создания log_text)
         self.log_handler = QLogHandler()
         self.log_handler.attach_to_widget(self.log_text)
         logging.getLogger("geoadjust").addHandler(self.log_handler)
         logging.getLogger("geoadjust").setLevel(logging.DEBUG)
-
-        self._setup_ui()
         self._connect_signals()
 
     def _setup_ui(self):

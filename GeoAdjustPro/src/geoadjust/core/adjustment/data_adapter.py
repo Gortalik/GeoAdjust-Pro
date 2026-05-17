@@ -470,12 +470,14 @@ def full_cycle_test(file_path: str, parser_class, fixed_points: List[str] = None
         # Парсинг файла
         logger.info(f"Парсинг файла: {file_path}")
         parser = parser_class()
-        parse_result = parser.parse(Path(file_path))
-        
-        if not parse_result.get('success', False):
-            logger.warning(f"Парсинг завершился с предупреждениями: {parse_result.get('errors', [])}")
-        
-        logger.info(f"Распаршено {parse_result.get('num_points', 0)} точек и {parse_result.get('num_observations', 0)} наблюдений")
+        obs_list = parser.parse(Path(file_path))
+        logger.info(f"GSI parse returned type: {type(obs_list)}, len={len(obs_list) if hasattr(obs_list, '__len__') else 'N/A'}")
+        parse_result = {
+            'success': True,
+            'observations': obs_list,
+            'num_points': len(set(o.station_id for o in obs_list) | set(o.target_id for o in obs_list)) if obs_list else 0,
+            'num_observations': len(obs_list)
+        }
         
         # Уравнивание
         processor = AdjustmentProcessor()

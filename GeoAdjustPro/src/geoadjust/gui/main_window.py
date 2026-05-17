@@ -1534,6 +1534,7 @@ class MainWindow(QMainWindow):
 
     def _process_imported_data(self, imported_data):
         """Обработка импортированных данных"""
+        print(f"[PROCESS] _process_imported_data called, keys={list(imported_data.keys())}")
         logger.info(f"_process_imported_data: processing imported data with keys: {list(imported_data.keys())}")
         # Проверяем, что проект существует
         if not self.current_project:

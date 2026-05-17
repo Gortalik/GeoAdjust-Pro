@@ -1,30 +1,20 @@
-"""
-Модуль уравнивания геодезических сетей
-
-Включает компоненты:
-- AdjustmentEngine: движок уравнивания методом наименьших квадратов
-- EquationsBuilder: построение матрицы коэффициентов уравнений поправок
-- WeightBuilder: формирование весовой матрицы измерений
-- FreeNetworkAdjustment: свободное уравнивание
-- RobustMethods: робастные методы уравнивания
-- Instrument: библиотека геодезических приборов
-
-Примечание: Все модули работают без зависимости от scikit-sparse.
-Используются стандартные методы SciPy (LU-разложение, сопряжённые градиенты).
-"""
-
-from .engine import AdjustmentEngine
-from .equations_builder import EquationsBuilder
-from .weight_builder import WeightBuilder
-from .free_network import FreeNetworkAdjustment
-from .robust_methods import RobustMethods
-from .instruments import Instrument
+"""Модуль математического ядра уравнивания"""
+from geoadjust.core.adjustment.engine import AdjustmentEngine, AdjustmentResult
+from geoadjust.core.adjustment.equations import apply_constraints, build_linearized_equations
+from geoadjust.core.adjustment.free_adjustment import filter_gross_errors, run_free_adjustment
+from geoadjust.core.adjustment.solver import compute_sigma_0, solve_normal_equations
+from geoadjust.core.adjustment.weights import InstrumentSpec, ObsType, calculate_weight
 
 __all__ = [
-    'AdjustmentEngine',
-    'EquationsBuilder',
-    'WeightBuilder',
-    'FreeNetworkAdjustment',
-    'RobustMethods',
-    'Instrument'
+    "AdjustmentEngine",
+    "AdjustmentResult",
+    "InstrumentSpec",
+    "ObsType",
+    "calculate_weight",
+    "build_linearized_equations",
+    "apply_constraints",
+    "solve_normal_equations",
+    "compute_sigma_0",
+    "run_free_adjustment",
+    "filter_gross_errors",
 ]

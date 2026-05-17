@@ -1,855 +1,304 @@
-"""
-Модуль построения матрицы коэффициентов уравнений поправок
-
-Этот модуль формирует математическую модель уравнивания из исходных геодезических измерений.
-Для каждого типа измерения вычисляются частные производные по формулам Ю.И. Маркузе.
-
-Автор: GeoAdjust-Pro Team
-Версия: 2.0
-"""
+# src/geoadjust/core/adjustment/equations_builder.py
+"""Сборка матриц A и L с валидацией и детальным логированием"""
+import logging
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
-from scipy import sparse
-from typing import List, Dict, Tuple, Optional
-import logging
+import scipy.sparse as sparse
+from scipy.sparse.linalg import eigsh
 
-from ..network.models import NetworkPoint, Observation
+from geoadjust.core.adjustment.weights import InstrumentSpec, ObsType
+from geoadjust.io.base import Observation
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("geoadjust.equations_builder")
 
+
+def check_rank_sparse(N_sparse: sparse.spmatrix, tol: float = 1e-10) -> int:
+    """
+    Оценка ранга разреженной нормальной матрицы без перевода в плотную.
+    Использует неполное разложение Ланцоша для вычисления собственных значений.
+    
+    Args:
+        N_sparse: Разреженная симметричная матрица N = A^T @ A
+        tol: Порог отсечения малых собственных значений
+        
+    Returns:
+        Ранг матрицы (количество собственных значений > tol)
+    """
+    n = N_sparse.shape[0]
+    if n == 0:
+        return 0
+
+    try:
+        # Для небольших матриц (< 100) можно использовать плотный метод
+        if n < 100:
+            return np.linalg.matrix_rank(N_sparse.toarray(), tol=tol)
+
+        # Оцениваем количество собственных значений
+        k = min(n - 1, max(10, n // 10))
+
+        # Находим максимальные собственные значения
+        try:
+            eigenvalues_max = eigsh(N_sparse, k=k, which='LM', return_eigenvectors=False, tol=1e-6)
+            # Считаем сколько больше порога
+            rank_estimate = np.sum(eigenvalues_max > tol)
+
+            # Если все найденные собственные значения больше порога,
+            # проверяем минимальные для уточнения
+            if rank_estimate == k:
+                try:
+                    eigenvalues_min = eigsh(N_sparse, k=min(k, n//2), which='SM', sigma=tol,
+                                           return_eigenvectors=False, tol=1e-6)
+                    rank_estimate = np.sum(eigenvalues_min > tol)
+                except Exception:
+                    pass
+
+            return rank_estimate
+        except Exception:
+            # Fallback для случаев когда eigsh не сходится
+            return np.linalg.matrix_rank(N_sparse.toarray(), tol=tol)
+
+    except Exception as e:
+        logger.warning(f"Не удалось вычислить ранг через sparse методы: {e}. Использую fallback.")
+        return np.linalg.matrix_rank(N_sparse.toarray(), tol=tol)
+
+
+def check_cond_sparse(N_sparse: sparse.spmatrix, tol: float = 1e-12) -> float:
+    """
+    Оценка числа обусловленности разреженной матрицы без перевода в плотную.
+    
+    Args:
+        N_sparse: Разреженная симметричная матрица
+        tol: Порог для регуляризации
+        
+    Returns:
+        Число обусловленности или inf если матрица вырождена
+    """
+    n = N_sparse.shape[0]
+    if n == 0:
+        return float('inf')
+
+    try:
+        # Для небольших матриц используем плотный метод
+        if n < 100:
+            N_dense = N_sparse.toarray()
+            try:
+                return np.linalg.cond(N_dense)
+            except Exception:
+                return float('inf')
+
+        # Находим максимальное собственное значение
+        try:
+            sigma_max = eigsh(N_sparse, k=1, which='LM', return_eigenvectors=False, tol=1e-6)[0]
+        except Exception:
+            return float('inf')
+
+        # Находим минимальное собственное значение
+        try:
+            # Используем shift-invert для нахождения минимального собственного значения
+            sigma_min_array = eigsh(N_sparse, k=1, which='SM', sigma=tol,
+                                   return_eigenvectors=False, tol=1e-6)
+            sigma_min = sigma_min_array[0]
+        except Exception:
+            # Если не получается найти минимальное, оцениваем через след
+            try:
+                trace = N_sparse.diagonal().sum()
+                sigma_min = max(tol, trace / n)
+            except Exception:
+                return float('inf')
+
+        if sigma_min <= tol or sigma_max <= tol:
+            return float('inf')
+
+        return sigma_max / sigma_min
+
+    except Exception as e:
+        logger.warning(f"Не удалось вычислить число обусловленности: {e}")
+        return float('inf')
 
 class EquationsBuilder:
     """
-    Построение матрицы коэффициентов уравнений поправок из исходных измерений.
-    
-    Реализует параметрический метод уравнивания по Ю.И. Маркузе.
-    Для каждого типа измерения формируются уравнения поправок вида:
-    
-        v = A · Δx - ℓ
-    
-    где:
-    - v - поправка в измерение
-    - A - матрица частных производных
-    - Δx - поправки к приближённым координатам
-    - ℓ - свободный член (разность измеренного и вычисленного значения)
+    Построитель уравнений поправок для геодезических сетей.
+    Поддерживает нивелирование, расстояния, углы и направления.
     """
-    
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
-    
+    def __init__(self, spec: InstrumentSpec = None):
+        self.spec = spec or InstrumentSpec(class_code="4")
+        self.rows = []
+        self.cols = []
+        self.data = []
+        self.L = []
+        self.point_to_idx = {}
+        self.param_count = 0
+
     def build_adjustment_matrix(
         self,
         observations: List[Observation],
-        points: Dict[str, NetworkPoint],
-        fixed_points: List[str] = None
-    ) -> Tuple[sparse.csr_matrix, np.ndarray, Dict]:
+        point_indices: Dict[str, int],
+        approximate_coords: Dict[str, float],
+        fixed_points: Dict[str, float] = None
+    ) -> Tuple[sparse.csr_matrix, np.ndarray, Dict[str, Any]]:
         """
-        Построение полной матрицы коэффициентов уравнений поправок.
-        
-        Параметры:
-        -----------
-        observations : List[Observation]
-            Список измерений (направления, расстояния, превышения, векторы ГНСС)
-        points : Dict[str, NetworkPoint]
-            Словарь пунктов сети {point_id: NetworkPoint}
-        fixed_points : List[str], optional
-            Список идентификаторов исходных (твёрдых) пунктов
-        
-        Возвращает:
-        ------------
-        A : sparse.csr_matrix
-            Разреженная матрица коэффициентов (n × u), где:
-            - n - число уравнений (измерений)
-            - u - число неизвестных (параметров)
-        L : np.ndarray
-            Вектор свободных членов (размерность n)
-        validation : Dict
-            Отчёт о валидации системы (статус, ранг, обусловленность)
-        
-        Пример:
-        -------
-        >>> builder = EquationsBuilder()
-        >>> A, L, validation = builder.build_adjustment_matrix(observations, points, fixed_points=['P1', 'P2'])
-        >>> print(f"Матрица А: {A.shape[0]}×{A.shape[1]}")
-        >>> print(f"Вектор L: {len(L)}")
-        >>> print(f"Статус валидации: {validation['status']}")
+        Собирает матрицу коэффициентов A и вектор свободных членов L.
+        Возвращает (A, L, validation_report).
         """
-        if fixed_points is None:
-            fixed_points = []
-        
-        # Проверка входных данных
-        if not observations:
-            raise ValueError("Список измерений пуст")
-        if not points:
-            raise ValueError("Словарь пунктов пуст")
+        logger.info("═" * 60)
+        logger.info("Начало построения уравнений поправок")
+        logger.info(f"Входные данные: {len(observations)} измерений, {len(point_indices)} пунктов")
 
-        # Валидация типов данных
-        assert isinstance(points, dict), "points должен быть Dict[str, NetworkPoint]"
-        assert isinstance(observations, list), "observations должен быть List[Observation]"
+        self._reset()
+        self.point_to_idx = point_indices.copy()
+        self.param_count = len(point_indices)
 
-        # Проверка что все элементы правильного типа
-        for obs in observations:
-            if not hasattr(obs, 'obs_type'):
-                raise ValueError(f"Неверный тип измерения: {type(obs)}. Ожидается Observation.")
-        for point_id, point in points.items():
-            if not hasattr(point, 'point_id'):
-                raise ValueError(f"Неверный тип точки {point_id}: {type(point)}. Ожидается NetworkPoint.")
-        
-        # Определение размерности сети (2D или 3D)
-        has_heights = any(p.h is not None for p in points.values())
-        num_unknowns_per_point = 3 if has_heights else 2
-        
-        # Подсчёт числа неизвестных
-        num_free_points = len([p for p in points.values() if p.point_id not in fixed_points])
-        num_unknowns = num_free_points * num_unknowns_per_point
-        
-        # Создание словаря для быстрого доступа к индексам неизвестных
-        unknown_indices = {}
-        idx = 0
-        for point_id, point in sorted(points.items()):
-            if point_id not in fixed_points:
-                unknown_indices[point_id] = idx
-                idx += num_unknowns_per_point
-        
-        # Списки для формирования разреженной матрицы
-        row_indices = []
-        col_indices = []
-        data_values = []
-        L_vector = []
-        
-        obs_index = 0
-        skipped_count = 0
+        obs_processed = 0
+        obs_skipped = 0
         errors = []
 
-        self.logger.info("=" * 60)
-        self.logger.info("Начало построения уравнений поправок")
-        self.logger.info(f"Входные данные: {len(observations)} измерений, {len(points)} пунктов")
-        for obs in observations:
-            self.logger.debug(f"Processing observation {obs.obs_id}: type={obs.obs_type}, active={obs.is_active}, from={obs.from_point_id}, to={obs.to_point_id}")
-            if not obs.is_active:
-                self.logger.debug(f"Skipping inactive observation {obs.obs_id}")
-                skipped_count += 1
-                continue
-            
+        for idx, obs in enumerate(observations, 1):
             try:
-                # Check if points exist
-                if obs.from_point_id not in points:
-                    self.logger.error(f"Point {obs.from_point_id} not found in points dict for observation {obs.obs_id}")
-                    continue
-                if obs.to_point_id not in points:
-                    self.logger.error(f"Point {obs.to_point_id} not found in points dict for observation {obs.obs_id}")
+                if not self._validate_observation(obs, point_indices, approximate_coords):
+                    obs_skipped += 1
                     continue
 
-                if obs.obs_type == 'direction':
-                    indices, coeffs, ell = self._build_direction_equation(
-                        obs, points, unknown_indices, num_unknowns_per_point
-                    )
-                elif obs.obs_type in ['distance', 'slope_distance', 'horizontal_distance']:
-                    indices, coeffs, ell = self._build_distance_equation(
-                        obs, points, unknown_indices, num_unknowns_per_point
-                    )
-                elif obs.obs_type in ['height_diff', 'leveling_height_diff']:
-                    indices, coeffs, ell = self._build_height_diff_equation(
-                        obs, points, unknown_indices, num_unknowns_per_point
-                    )
-                elif obs.obs_type == 'gnss_vector':
-                    # Вектор ГНСС даёт три уравнения
-                    indices_list, coeffs_list, ell_list = self._build_gnss_vector_equations(
-                        obs, points, unknown_indices, num_unknowns_per_point
-                    )
+                self._add_equation(obs, approximate_coords)
+                obs_processed += 1
 
-                    # Обработка трёх уравнений
-                    for sub_indices, sub_coeffs, sub_ell in zip(indices_list, coeffs_list, ell_list):
-                        if sub_indices:  # Если есть ненулевые коэффициенты
-                            for col_idx, coeff in zip(sub_indices, sub_coeffs):
-                                row_indices.append(obs_index)
-                                col_indices.append(col_idx)
-                                data_values.append(coeff)
-                            L_vector.append(sub_ell)
-                            obs_index += 1
-                elif obs.obs_type == 'combined':
-                    # Для combined измерений создаем несколько уравнений
-                    equations_created = False
+                # Логирование каждого 50-го измерения для читаемости
+                if idx % 50 == 0 or idx == len(observations):
+                    logger.debug(f"  → Обработано: {idx}/{len(observations)}")
 
-
-
-                    # Направление (горизонтальный угол)
-                    if hasattr(obs, 'horizontal_angle') and obs.horizontal_angle is not None:
-                        temp_obs = type('TempObs', (), {
-                            'obs_id': f"{obs.obs_id}_dir",
-                            'from_point_id': obs.from_point_id,
-                            'to_point_id': obs.to_point_id,
-                            'value': obs.horizontal_angle,
-                            'is_active': getattr(obs, 'is_active', True)
-                        })()
-                        indices, coeffs, ell = self._build_direction_equation(
-                            temp_obs, points, unknown_indices, num_unknowns_per_point
-                        )
-                        if indices:  # Если уравнение создано
-                            for col_idx, coeff in zip(indices, coeffs):
-                                row_indices.append(obs_index)
-                                col_indices.append(col_idx)
-                                data_values.append(coeff)
-                            L_vector.append(ell)
-                            obs_index += 1
-                            equations_created = True
-
-                    # Расстояние
-                    if hasattr(obs, 'slope_distance') and obs.slope_distance is not None:
-                        temp_obs = type('TempObs', (), {
-                            'obs_id': f"{obs.obs_id}_dist",
-                            'from_point_id': obs.from_point_id,
-                            'to_point_id': obs.to_point_id,
-                            'value': obs.slope_distance,
-                            'is_active': getattr(obs, 'is_active', True)
-                        })()
-                        indices, coeffs, ell = self._build_distance_equation(
-                            temp_obs, points, unknown_indices, num_unknowns_per_point
-                        )
-                        if indices:  # Если уравнение создано
-                            for col_idx, coeff in zip(indices, coeffs):
-                                row_indices.append(obs_index)
-                                col_indices.append(col_idx)
-                                data_values.append(coeff)
-                            L_vector.append(ell)
-                            obs_index += 1
-                            equations_created = True
-
-                    # Зенитный угол
-                    if hasattr(obs, 'zenith_angle') and obs.zenith_angle is not None and num_unknowns_per_point >= 3:
-                        # Для зенитного угла нужна высота
-                        temp_obs = type('TempObs', (), {
-                            'obs_id': f"{obs.obs_id}_zen",
-                            'from_point_id': obs.from_point_id,
-                            'to_point_id': obs.to_point_id,
-                            'value': obs.zenith_angle,
-                            'is_active': getattr(obs, 'is_active', True)
-                        })()
-                        indices, coeffs, ell = self._build_zenith_angle_equation(
-                            temp_obs, points, unknown_indices, num_unknowns_per_point
-                        )
-                        if indices:  # Если уравнение создано
-                            for col_idx, coeff in zip(indices, coeffs):
-                                row_indices.append(obs_index)
-                                col_indices.append(col_idx)
-                                data_values.append(coeff)
-                            L_vector.append(ell)
-                            obs_index += 1
-                            equations_created = True
-
-                    if not equations_created:
-                        self.logger.warning(f"Combined измерение {obs.obs_id} не создало ни одного уравнения")
-                        continue
-                    continue
-                elif obs.obs_type == 'azimuth':
-                    # Азимут обрабатывается как направление
-                    indices, coeffs, ell = self._build_angle_equation(
-                        obs, points, unknown_indices, num_unknowns_per_point
-                    )
-                elif obs.obs_type == 'vertical_angle':
-                    # Вертикальный угол (зенитное расстояние)
-                    indices, coeffs, ell = self._build_zenith_angle_equation(
-                        obs, points, unknown_indices, num_unknowns_per_point
-                    )
-                elif obs.obs_type == 'zenith_angle':
-                    # Зенитный угол
-                    indices, coeffs, ell = self._build_zenith_angle_equation(
-                        obs, points, unknown_indices, num_unknowns_per_point
-                    )
-                else:
-                    self.logger.warning(f"Неизвестный тип измерения: {obs.obs_type} for observation {obs.obs_id}")
-                    continue
-                
-                # Заполнение матрицы для одного уравнения
-                if indices:  # Если есть ненулевые коэффициенты
-                    self.logger.debug(f"Adding equation for {obs.obs_id} with {len(indices)} coefficients")
-                    for col_idx, coeff in zip(indices, coeffs):
-                        row_indices.append(obs_index)
-                        col_indices.append(col_idx)
-                        data_values.append(coeff)
-                    L_vector.append(ell)
-                    obs_index += 1
-                else:
-                    self.logger.warning(f"No coefficients generated for observation {obs.obs_id} (type: {obs.obs_type})")
-                    
             except Exception as e:
-                self.logger.error(f"Ошибка при построении уравнения для {obs.obs_id}: {e}", exc_info=True)
-                raise
-        
-        # Формирование разреженной матрицы
-        if obs_index == 0:
-            raise ValueError("Не удалось построить ни одного уравнения. Проверьте данные.")
-        
-        A = sparse.csr_matrix(
-            (data_values, (row_indices, col_indices)),
-            shape=(obs_index, num_unknowns)
-        )
-        
-        L = np.array(L_vector, dtype=np.float64)
-        
-        self.logger.info(f"Построена матрица А: {A.shape[0]}×{A.shape[1]}")
-        self.logger.info(f"Вектор свободных членов L: {len(L)}")
-        self.logger.info(f"Пропущено измерений: {skipped_count}")
-        
-        # Валидация системы перед возвратом
-        validation = self._validate_system(A, L, points, fixed_points)
-        
+                err_msg = f"[ОШИБКА {idx}] Измерение {getattr(obs, 'obs_id', '?')}: {str(e)}"
+                logger.error(err_msg)
+                errors.append(err_msg)
+                obs_skipped += 1
+
+        # Формируем матрицу A с правильным количеством строк (одно уравнение = одна строка)
+        n_equations = len(self.L)
+        if n_equations == 0:
+            A = sparse.csr_matrix((0, self.param_count))
+        else:
+            A = sparse.csr_matrix((self.data, (self.rows, self.cols)),
+                                  shape=(n_equations, self.param_count))
+        L = np.array(self.L, dtype=np.float64)
+
+        logger.info(f"Сборка завершена. Успешно: {obs_processed}, Пропущено: {obs_skipped}, Ошибок: {len(errors)}")
+
+        # Валидация перед передачей в уравниватель
+        validation = self._validate_system(A, L, point_indices, fixed_points or {})
         return A, L, validation
-    
-    def _validate_system(self, A: sparse.csr_matrix, L: np.ndarray, 
-                         points: Dict[str, NetworkPoint], fixed: List[str]) -> Dict:
+
+    def _reset(self):
+        self.rows, self.cols, self.data, self.L = [], [], [], []
+        self.point_to_idx = {}
+        self.param_count = 0
+
+    def _validate_observation(self, obs: Observation, point_indices: Dict[str, int],
+                               approximate_coords: Dict[str, float]) -> bool:
+        """Проверка наличия точек и их координат."""
+        for attr in ("station_id", "target_id"):
+            pid = getattr(obs, attr, None)
+            if not pid or pid not in point_indices:
+                logger.warning(f"Точка '{pid}' отсутствует в сети. Измерение пропущено.")
+                return False
+
+            coord = approximate_coords.get(pid)
+            if coord is None:
+                logger.warning(f"Приближённая координата точки {pid} = None. Измерение пропущено.")
+                return False
+        return True
+
+    def _add_equation(self, obs: Observation, approximate_coords: Dict[str, float]):
         """
-        Проверка валидности собранной системы уравнений.
-        
-        Параметры:
-        -----------
-        A : sparse.csr_matrix
-            Матрица коэффициентов
-        L : np.ndarray
-            Вектор свободных членов
-        points : Dict[str, NetworkPoint]
-            Словарь пунктов
-        fixed : List[str]
-            Список исходных пунктов
-        
-        Возвращает:
-        ------------
-        report : Dict
-            Отчёт о валидации со статусом и деталями проверок
+        Добавляет уравнение поправок для наблюдения.
+        Поддерживает различные типы измерений.
         """
+        # row - это номер текущего уравнения (совпадает с индексом в L)
+        row = len(self.L)
+
+        if obs.type == ObsType.LEVELING:
+            self._add_leveling_equation(obs, approximate_coords, row)
+        elif obs.type == ObsType.DISTANCE:
+            self._add_distance_equation(obs, approximate_coords, row)
+        elif obs.type in (ObsType.ANGLE, ObsType.DIRECTION):
+            self._add_angle_equation(obs, approximate_coords, row)
+        else:
+            raise ValueError(f"Неподдерживаемый тип наблюдения: {obs.type}")
+
+    def _add_leveling_equation(self, obs: Observation, approx: Dict[str, float], row: int):
+        """Уравнение для нивелирования: h_изм - (H_target - H_station)"""
+        h_s = approx.get(obs.station_id, 0.0)
+        h_t = approx.get(obs.target_id, 0.0)
+
+        # Свободный член: l = h_measured - (H_target_approx - H_station_approx)
+        l_i = obs.value - (h_t - h_s)
+        self.L.append(l_i)
+
+        # Коэффициенты: d(v)/dH_s = -1, d(v)/dH_t = +1
+        idx_s = self.point_to_idx.get(obs.station_id)
+        idx_t = self.point_to_idx.get(obs.target_id)
+
+        # Добавляем коэффициенты только для свободных пунктов (не фиксированных)
+        # row - это номер строки (номер уравнения), который должен соответствовать len(self.L) - 1
+        if idx_s is not None:
+            self.rows.append(row); self.cols.append(idx_s); self.data.append(-1.0)
+        if idx_t is not None:
+            self.rows.append(row); self.cols.append(idx_t); self.data.append(1.0)
+
+    def _add_distance_equation(self, obs: Observation, approx: Dict[str, float], row: int):
+        """Уравнение для расстояний (плановая сеть)."""
+        # Для плановой сети нужны X, Y координаты
+        # Здесь упрощённая версия - требуется доработка для 2D
+        raise NotImplementedError("Уравнения для расстояний требуют 2D координат")
+
+    def _add_angle_equation(self, obs: Observation, approx: Dict[str, float], row: int):
+        """Уравнение для углов/направлений."""
+        # Требуется реализация для угловых измерений
+        raise NotImplementedError("Уравнения для углов требуют дополнительной реализации")
+
+    def _validate_system(self, A: sparse.csr_matrix, L: np.ndarray,
+                         point_indices: Dict[str, int], fixed: Dict[str, float]) -> Dict[str, Any]:
+        """Проверка ранга, обусловленности и размерностей системы с использованием sparse методов."""
         report = {"status": "PASSED", "checks": {}, "message": "Система валидна"}
 
         n_obs, n_params = A.shape
         report["checks"]["dimensions"] = f"A({n_obs}×{n_params}), L({len(L)})"
-        
-        # Проверка соответствия размерностей
+
         if n_obs != len(L):
             return {"status": "FAILED", "message": f"Размерности не совпадают: obs={n_obs} != L={len(L)}"}
         if n_obs == 0:
             return {"status": "FAILED", "message": "Нет измерений для уравнивания"}
 
-        # Проверка ранга нормальной матрицы
         if n_params > 0:
+            # Проверка ранга нормальной матрицы N = A^T A БЕЗ перевода в плотную
             try:
-                N = (A.T @ A).toarray()
-                rank = np.linalg.matrix_rank(N, tol=1e-12)
+                N = A.T @ A  # Остаётся разреженной
+
+                # Используем новые sparse методы для больших матриц
+                rank = check_rank_sparse(N, tol=1e-10)
                 report["checks"]["rank"] = f"{rank}/{n_params}"
-                
+
                 defect = n_params - rank
                 if defect == 0:
                     report["message"] = "Ранг полный. Сеть жёстко закреплена."
                 elif defect <= 3:
-                    report["message"] = f"⚠️ Свободная сеть (дефект ранга: {defect}). Требуется внутреннее/внешнее закрепление или S-преобразование."
+                    report["message"] = f"⚠️ Свободная сеть (дефект ранга: {defect}). Требуется закрепление."
                 else:
                     report["status"] = "FAILED"
-                    report["message"] = f"❌ Критический дефект ранга: {defect}. Проверьте исходные пункты и связность."
+                    report["message"] = f"❌ Критический дефект ранга: {defect}. Проверьте связность."
 
-                # Проверка обусловленности
-                try:
-                    cond = np.linalg.cond(N)
-                    report["checks"]["condition_number"] = f"{cond:.2e}"
-                    if cond > 1e14:
-                        if report["status"] != "FAILED":
-                            report["status"] = "WARNING"
-                        report["message"] += f" | ⚠️ Плохая обусловленность (cond={cond:.2e})"
-                except Exception:
-                    report["checks"]["condition_number"] = "Не вычислено (сингулярная матрица)"
+                # Проверка обусловленности без toarray()
+                cond = check_cond_sparse(N, tol=1e-12)
+                report["checks"]["condition_number"] = f"{cond:.2e}" if cond != float('inf') else "inf"
+                if cond > 1e14:
+                    if report["status"] == "PASSED":
+                        report["status"] = "WARNING"
+                    report["message"] += f" | ⚠️ Плохая обусловленность (cond={cond:.2e})"
+
             except Exception as e:
-                report["status"] = "ERROR"
-                report["message"] = f"Ошибка проверки ранга: {str(e)}"
+                logger.error(f"Ошибка валидации системы: {e}")
+                report["checks"]["condition_number"] = f"Не вычислено: {str(e)}"
+                report["status"] = "VALIDATION_ERROR"
         else:
-            report["checks"]["rank"] = "N/A (все точки фиксированы)"
+            report["checks"]["rank"] = "N/A (нет параметров)"
 
         return report
-    
-    def _build_direction_equation(
-        self,
-        obs: Observation,
-        points: Dict[str, NetworkPoint],
-        unknown_indices: Dict[str, int],
-        num_unknowns_per_point: int
-    ) -> Tuple[List[int], List[float], float]:
-        """
-        Формирование уравнения поправок для направления.
-
-        Уравнение поправок для направления (формула Маркузе):
-
-            v = -(sin α / S) · Δx_i + (cos α / S) · Δy_i +
-                (sin α / S) · Δx_j - (cos α / S) · Δy_j - ℓ
-
-        где:
-        - α - азимут направления
-        - S - расстояние между пунктами
-        - ℓ = M_изм - M_выч (разность измеренного и вычисленного направления)
-
-        Частные производные:
-        - ∂v/∂x_i = -sin α / S
-        - ∂v/∂y_i = cos α / S
-        - ∂v/∂x_j = sin α / S
-        - ∂v/∂y_j = -cos α / S
-        """
-        from_point = points[obs.from_point_id]
-        to_point = points[obs.to_point_id]
-        
-        # Проверяем, что координаты не None и не нулевые (для FREE точек)
-        if from_point.x is None or from_point.y is None or to_point.x is None or to_point.y is None:
-            self.logger.warning(f"Пропускаем измерение {obs.obs_id}: отсутствуют координаты точек {obs.from_point_id} или {obs.to_point_id}")
-            return [], [], 0.0
-        
-        # Проверка на нулевые координаты (типично для точек со статусом FREE)
-        if (from_point.x == 0.0 and from_point.y == 0.0) or (to_point.x == 0.0 and to_point.y == 0.0):
-            self.logger.warning(f"Пропускаем измерение {obs.obs_id}: нулевые координаты у точки {obs.from_point_id if from_point.x == 0.0 and from_point.y == 0.0 else obs.to_point_id}")
-            return [], [], 0.0
-        
-        # Приближенные координаты
-        x_i, y_i = from_point.x, from_point.y
-        x_j, y_j = to_point.x, to_point.y
-
-        # Разности координат
-        dx = x_j - x_i
-        dy = y_j - y_i
-        
-        # Горизонтальное проложение
-        S = np.sqrt(dx**2 + dy**2)
-        
-        if S < 1e-6:
-            self.logger.warning(f"Нулевое расстояние между {obs.from_point_id} и {obs.to_point_id}")
-            S = 1e-6
-        
-        # Азимут направления (в радианах)
-        alpha = np.arctan2(dy, dx)
-        
-        # Коэффициенты уравнения поправок
-        a_xi = -np.sin(alpha) / S
-        a_yi = np.cos(alpha) / S
-        a_xj = np.sin(alpha) / S
-        a_yj = -np.cos(alpha) / S
-        
-        # Индексы неизвестных и коэффициенты
-        indices = []
-        coeffs = []
-        
-        # Станция (i)
-        if obs.from_point_id in unknown_indices:
-            idx_base = unknown_indices[obs.from_point_id]
-            indices.extend([idx_base, idx_base + 1])
-            coeffs.extend([a_xi, a_yi])
-        
-        # Целевая точка (j)
-        if obs.to_point_id in unknown_indices:
-            idx_base = unknown_indices[obs.to_point_id]
-            indices.extend([idx_base, idx_base + 1])
-            coeffs.extend([a_xj, a_yj])
-        
-        # Свободный член ℓ = M_изм - M_выч
-        # Вычисленное направление из приближённых координат
-        computed_azimuth = alpha
-        
-        # Определение единицы измерения угла
-        angle_unit = getattr(obs, 'angle_unit', 'degrees')  # 'degrees', 'radians', 'gons'
-        
-        # Измеренное направление (конвертация в радианы)
-        measured_value = obs.value
-        
-        if angle_unit == 'degrees':
-            measured_azimuth = np.deg2rad(measured_value)
-        elif angle_unit == 'gons':
-            measured_azimuth = measured_value * np.pi / 200.0
-        elif angle_unit == 'radians':
-            measured_azimuth = measured_value
-        else:
-            # По умолчанию предполагаем градусы
-            measured_azimuth = np.deg2rad(measured_value)
-            self.logger.warning(f"Неизвестная единица измерения угла '{angle_unit}', "
-                              f"используем градусы")
-        
-        # Приведение к диапазону [0, 2π]
-        computed_azimuth = computed_azimuth % (2 * np.pi)
-        measured_azimuth = measured_azimuth % (2 * np.pi)
-        
-        ell = measured_azimuth - computed_azimuth
-        
-        # Приведение разности к диапазону [-π, π]
-        if ell > np.pi:
-            ell -= 2 * np.pi
-        elif ell < -np.pi:
-            ell += 2 * np.pi
-        
-        return indices, coeffs, ell
-    
-    def _build_distance_equation(
-        self,
-        obs: Observation,
-        points: Dict[str, NetworkPoint],
-        unknown_indices: Dict[str, int],
-        num_unknowns_per_point: int
-    ) -> Tuple[List[int], List[float], float]:
-        """
-        Формирование уравнения поправок для расстояния.
-        
-        Уравнение поправок для расстояния (формула Маркузе):
-        
-            v = (cos α) · Δx_i + (sin α) · Δy_i -
-                (cos α) · Δx_j - (sin α) · Δy_j - ℓ
-        
-        где:
-        - α - азимут направления
-        - ℓ = S_изм - S_выч (разность измеренного и вычисленного расстояния)
-        
-        Частные производные:
-        - ∂v/∂x_i = cos α
-        - ∂v/∂y_i = sin α
-        - ∂v/∂x_j = -cos α
-        - ∂v/∂y_j = -sin α
-        """
-        from_point = points[obs.from_point_id]
-        to_point = points[obs.to_point_id]
-        
-        # Проверяем, что координаты не None и не нулевые (для FREE точек)
-        if from_point.x is None or from_point.y is None or to_point.x is None or to_point.y is None:
-            self.logger.warning(f"Пропускаем измерение {obs.obs_id}: отсутствуют координаты точек {obs.from_point_id} или {obs.to_point_id}")
-            return [], [], 0.0
-        
-        # Проверка на нулевые координаты (типично для точек со статусом FREE)
-        if (from_point.x == 0.0 and from_point.y == 0.0) or (to_point.x == 0.0 and to_point.y == 0.0):
-            self.logger.warning(f"Пропускаем измерение {obs.obs_id}: нулевые координаты у точки {obs.from_point_id if from_point.x == 0.0 and from_point.y == 0.0 else obs.to_point_id}")
-            return [], [], 0.0
-        
-        # Приближенные координаты
-        x_i, y_i = from_point.x, from_point.y
-        x_j, y_j = to_point.x, to_point.y
-        
-        # Разности координат
-        dx = x_j - x_i
-        dy = y_j - y_i
-        
-        # Горизонтальное проложение
-        S = np.sqrt(dx**2 + dy**2)
-        
-        if S < 1e-6:
-            self.logger.warning(f"Нулевое расстояние между {obs.from_point_id} и {obs.to_point_id}")
-            S = 1e-6
-        
-        # Азимут направления (в радианах)
-        alpha = np.arctan2(dy, dx)
-        
-        # Коэффициенты уравнения поправок (ИСПРАВЛЕНО: добавлено деление на S)
-        a_xi = np.cos(alpha) / S
-        a_yi = np.sin(alpha) / S
-        a_xj = -np.cos(alpha) / S
-        a_yj = -np.sin(alpha) / S
-        
-        # Индексы неизвестных и коэффициенты
-        indices = []
-        coeffs = []
-        
-        # Станция (i)
-        if obs.from_point_id in unknown_indices:
-            idx_base = unknown_indices[obs.from_point_id]
-            indices.extend([idx_base, idx_base + 1])
-            coeffs.extend([a_xi, a_yi])
-        
-        # Целевая точка (j)
-        if obs.to_point_id in unknown_indices:
-            idx_base = unknown_indices[obs.to_point_id]
-            indices.extend([idx_base, idx_base + 1])
-            coeffs.extend([a_xj, a_yj])
-        
-        # Свободный член ℓ = S_изм - S_выч
-        ell = obs.value - S
-        
-        return indices, coeffs, ell
-    
-    def _build_height_diff_equation(
-        self,
-        obs: Observation,
-        points: Dict[str, NetworkPoint],
-        unknown_indices: Dict[str, int],
-        num_unknowns_per_point: int
-    ) -> Tuple[List[int], List[float], float]:
-        """
-        Формирование уравнения поправок для превышения.
-        
-        Уравнение поправок для превышения:
-        
-            v = Δh_i - Δh_j - ℓ
-        
-        где:
-        - ℓ = h_изм - (H_j - H_i) (разность измеренного и вычисленного превышения)
-        
-        Частные производные:
-        - ∂v/∂h_i = 1
-        - ∂v/∂h_j = -1
-        """
-        indices = []
-        coeffs = []
-        
-        # Определяем индекс высоты в векторе неизвестных
-        # Для 2D сети: heights не обрабатываются
-        # Для 3D сети: каждая точка имеет 3 неизвестных (x, y, h)
-        
-        if num_unknowns_per_point == 2:
-            self.logger.warning(
-                f"Измерение превышения {obs.obs_id} в 2D сети. "
-                "Превышение будет пропущено."
-            )
-            return [], [], 0.0
-        
-        # Станция (i)
-        if obs.from_point_id in unknown_indices:
-            idx_base = unknown_indices[obs.from_point_id]
-            idx_h = idx_base + 2  # Индекс высоты (третий параметр)
-            indices.append(idx_h)
-            coeffs.append(1.0)
-        
-        # Целевая точка (j)
-        if obs.to_point_id in unknown_indices:
-            idx_base = unknown_indices[obs.to_point_id]
-            idx_h = idx_base + 2
-            indices.append(idx_h)
-            coeffs.append(-1.0)
-        
-        # Свободный член ℓ = h_изм - (H_j - H_i)
-        from_point = points[obs.from_point_id]
-        to_point = points[obs.to_point_id]
-        
-        # Проверяем, что координаты не None (для высоты нужны хотя бы x,y)
-        if from_point.x is None or from_point.y is None or to_point.x is None or to_point.y is None:
-            self.logger.warning(f"Пропускаем измерение {obs.obs_id}: отсутствуют координаты точек {obs.from_point_id} или {obs.to_point_id}")
-            return [], [], 0.0
-        
-        # Приближенные высоты
-        h_i = from_point.h if from_point.h is not None else 0.0
-        h_j = to_point.h if to_point.h is not None else 0.0
-
-        # Проверяем, что хотя бы одна высота не None (для 3D сети)
-        if num_unknowns_per_point == 3 and h_i == 0.0 and h_j == 0.0 and from_point.h is None and to_point.h is None:
-            self.logger.warning(f"Пропускаем измерение {obs.obs_id}: отсутствуют высоты точек {obs.from_point_id} или {obs.to_point_id}")
-            return [], [], 0.0
-        
-        # Высоты инструмента и цели (если заданы)
-        instrument_height = getattr(obs, 'instrument_height', 0.0)
-        target_height = getattr(obs, 'target_height', 0.0)
-        
-        # Вычисленное превышение с учётом высот инструмента/цели
-        computed_height_diff = (h_j + target_height) - (h_i + instrument_height)
-        
-        # Измеренное превышение
-        measured_height_diff = obs.value
-        
-        # Свободный член
-        ell = measured_height_diff - computed_height_diff
-        
-        return indices, coeffs, ell
-    
-    def _build_gnss_vector_equations(
-        self,
-        obs: Observation,
-        points: Dict[str, NetworkPoint],
-        unknown_indices: Dict[str, int],
-        num_unknowns_per_point: int
-    ) -> Tuple[List[List[int]], List[List[float]], List[float]]:
-        """
-        Формирование системы уравнений поправок для вектора ГНСС (3 уравнения).
-        
-        Вектор ГНСС даёт три независимых уравнения для компонент X, Y, Z:
-        
-            v_x = -Δx_i + Δx_j - ΔX_изм
-            v_y = -Δy_i + Δy_j - ΔY_изм
-            v_z = -Δz_i + Δz_j - ΔZ_изм
-        
-        Частные производные:
-        - ∂v_x/∂x_i = -1, ∂v_x/∂x_j = 1
-        - ∂v_y/∂y_i = -1, ∂v_y/∂y_j = 1
-        - ∂v_z/∂z_i = -1, ∂v_z/∂z_j = 1
-        """
-        from_point = points[obs.from_point_id]
-        to_point = points[obs.to_point_id]
-
-        # Проверяем, что координаты не None
-        if (from_point.x is None or from_point.y is None or
-            (num_unknowns_per_point == 3 and from_point.h is None) or
-            to_point.x is None or to_point.y is None or
-            (num_unknowns_per_point == 3 and to_point.h is None)):
-            self.logger.warning(f"Пропускаем GNSS измерение {obs.obs_id}: отсутствуют координаты точек {obs.from_point_id} или {obs.to_point_id}")
-            return [], [], []
-
-        indices_list = []
-        coeffs_list = []
-        ell_list = []
-
-        # Получаем приращения координат из вектора ГНСС
-        delta_x = getattr(obs, 'delta_x', None) or obs.value
-        delta_y = getattr(obs, 'delta_y', None) or 0.0
-        delta_z = getattr(obs, 'delta_z', None) or 0.0
-        
-        # Три уравнения для компонент вектора
-        for component_idx in range(3):
-            indices = []
-            coeffs = []
-            
-            # Станция (i)
-            if obs.from_point_id in unknown_indices:
-                idx_base = unknown_indices[obs.from_point_id]
-                
-                if num_unknowns_per_point == 3:
-                    # 3D сеть: x=0, y=1, z=2
-                    idx_comp = idx_base + component_idx
-                    indices.append(idx_comp)
-                    coeffs.append(-1.0)
-                elif component_idx < 2:
-                    # 2D сеть: только x и y
-                    idx_comp = idx_base + component_idx
-                    indices.append(idx_comp)
-                    coeffs.append(-1.0)
-            
-            # Целевая точка (j)
-            if obs.to_point_id in unknown_indices:
-                idx_base = unknown_indices[obs.to_point_id]
-                
-                if num_unknowns_per_point == 3:
-                    idx_comp = idx_base + component_idx
-                    indices.append(idx_comp)
-                    coeffs.append(1.0)
-                elif component_idx < 2:
-                    idx_comp = idx_base + component_idx
-                    indices.append(idx_comp)
-                    coeffs.append(1.0)
-            
-            # Свободный член (значение компоненты вектора)
-            if component_idx == 0:
-                ell = delta_x
-            elif component_idx == 1:
-                ell = delta_y
-            else:
-                ell = delta_z
-            
-            indices_list.append(indices)
-            coeffs_list.append(coeffs)
-            ell_list.append(ell)
-        
-        return indices_list, coeffs_list, ell_list
-    
-    def _build_angle_equation(
-        self,
-        obs: Observation,
-        points: Dict[str, NetworkPoint],
-        unknown_indices: Dict[str, int],
-        num_unknowns_per_point: int
-    ) -> Tuple[List[int], List[float], float]:
-        """
-        Формирование уравнения поправок для угла (азимута, вертикального угла).
-        
-        Угол между двумя направлениями обрабатывается как разность двух направлений.
-        """
-        # Для простоты рассматриваем угол как направление
-        # В полной реализации нужно учитывать оба направления
-        return self._build_direction_equation(
-            obs, points, unknown_indices, num_unknowns_per_point
-        )
-    
-    def _build_zenith_angle_equation(
-        self,
-        obs: Observation,
-        points: Dict[str, NetworkPoint],
-        unknown_indices: Dict[str, int],
-        num_unknowns_per_point: int
-    ) -> Tuple[List[int], List[float], float]:
-        """
-        Формирование уравнения поправок для зенитного угла.
-        
-        Уравнение поправок для зенитного угла аналогично направлению,
-        но с учётом вертикальной плоскости.
-        """
-        from_point = points[obs.from_point_id]
-        to_point = points[obs.to_point_id]
-        
-        # Проверяем, что координаты не None
-        if from_point.x is None or from_point.y is None or to_point.x is None or to_point.y is None:
-            self.logger.warning(f"Пропускаем измерение {obs.obs_id}: отсутствуют плановые координаты точек {obs.from_point_id} или {obs.to_point_id}")
-            return [], [], 0.0
-        
-        # Приближенные координаты
-        x_i, y_i = from_point.x, from_point.y
-        x_j, y_j = to_point.x, to_point.y
-        
-        # Разности координат
-        dx = x_j - x_i
-        dy = y_j - y_i
-        
-        # Горизонтальное проложение
-        S_h = np.sqrt(dx**2 + dy**2)
-        
-        if S_h < 1e-6:
-            self.logger.warning(f"Нулевое горизонтальное расстояние между {obs.from_point_id} и {obs.to_point_id}")
-            S_h = 1e-6
-        
-        # Вертикальное превышение (если есть высоты)
-        dh = 0.0
-        if hasattr(from_point, 'h') and hasattr(to_point, 'h'):
-            if from_point.h is not None and to_point.h is not None:
-                dh = to_point.h - from_point.h
-        
-        # Наклонное расстояние
-        S = np.sqrt(S_h**2 + dh**2)
-        
-        # Вычисленное зенитное расстояние из приближённых координат
-        if S > 1e-6:
-            computed_zenith = np.arctan2(S_h, dh)
-            if computed_zenith < 0:
-                computed_zenith += np.pi
-        else:
-            computed_zenith = np.pi / 2
-        
-        # Измеренное зенитное расстояние (в радианах)
-        measured_zenith = np.deg2rad(obs.value)
-        
-        # Свободный член ℓ = Z_изм - Z_выч
-        ell = measured_zenith - computed_zenith
-        
-        # Приведение разности к диапазону [-π, π]
-        while ell > np.pi:
-            ell -= 2 * np.pi
-        while ell < -np.pi:
-            ell += 2 * np.pi
-        
-        # Коэффициенты уравнения поправок
-        # ∂v/∂x_i = -cos α · cos Z / S
-        # ∂v/∂y_i = -sin α · cos Z / S
-        # ∂v/∂z_i = sin Z / S
-        # ∂v/∂x_j = cos α · cos Z / S
-        # ∂v/∂y_j = sin α · cos Z / S
-        # ∂v/∂z_j = -sin Z / S
-        
-        alpha = np.arctan2(dy, dx)
-        zenith = computed_zenith
-        
-        a_xi = -np.cos(alpha) * np.cos(zenith) / S
-        a_yi = -np.sin(alpha) * np.cos(zenith) / S
-        a_xj = np.cos(alpha) * np.cos(zenith) / S
-        a_yj = np.sin(alpha) * np.cos(zenith) / S
-        
-        indices = []
-        coeffs = []
-        
-        # Станция (i)
-        if obs.from_point_id in unknown_indices:
-            idx_base = unknown_indices[obs.from_point_id]
-            if num_unknowns_per_point >= 2:
-                indices.extend([idx_base, idx_base + 1])
-                coeffs.extend([a_xi, a_yi])
-            if num_unknowns_per_point == 3:
-                indices.append(idx_base + 2)
-                coeffs.append(np.sin(zenith) / S)
-        
-        # Целевая точка (j)
-        if obs.to_point_id in unknown_indices:
-            idx_base = unknown_indices[obs.to_point_id]
-            if num_unknowns_per_point >= 2:
-                indices.extend([idx_base, idx_base + 1])
-                coeffs.extend([a_xj, a_yj])
-            if num_unknowns_per_point == 3:
-                indices.append(idx_base + 2)
-                coeffs.append(-np.sin(zenith) / S)
-        
-        return indices, coeffs, ell

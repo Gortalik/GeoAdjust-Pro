@@ -1,374 +1,249 @@
+"""Основной движок уравнивания высотных сетей методом наименьших квадратов"""
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+
 import numpy as np
-from scipy import sparse
-from scipy.sparse.linalg import splu, cg, LinearOperator
-from typing import Tuple, Dict, Any, Optional
-import logging
+import scipy.sparse as sp
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+from geoadjust.io.base import Observation
 
+from .equations import apply_constraints, build_linearized_equations
+from .free_adjustment import filter_gross_errors, run_free_adjustment
+from .solver import compute_sigma_0, solve_normal_equations
+from .weights import InstrumentSpec
+
+
+@dataclass
+class AdjustmentResult:
+    """Результат уравнивания"""
+    corrections: np.ndarray                    # Поправки к высотам пунктов
+    residuals: np.ndarray                      # Невязки наблюдений
+    sigma_0: float                             # СКП единицы веса
+    covariance_matrix: Optional[sp.csr_matrix] # Ковариационная матрица
+    iterations: int                            # Число итераций
+    status: str                                # Статус сходимости
+    diagnostics: Dict                          # Дополнительная диагностика
+    point_indices: Dict[str, int]              # Маппинг пунктов в индексы
+    adjusted_heights: Dict[str, float]         # Уравненные высоты
 
 class AdjustmentEngine:
-    """Движок уравнивания геодезических сетей методом наименьших квадратов
-    по параметрическому методу Ю.И. Маркузе
+    """
+    Основной движок уравнивания высотных сетей.
     
-    Использует адаптивный выбор решателя в зависимости от размера сети:
-    - < 500 пунктов: плотное решение (быстро и точно)
-    - 500-2000 пунктов: LU-разложение разреженных матриц (splu)
-    - > 2000 пунктов: итерационный метод сопряжённых градиентов (cg)
-    
-    Все методы входят в стандартную поставку SciPy и работают на всех платформах,
-    включая Windows, без необходимости установки дополнительных библиотек.
+    Поддерживает:
+    - Итерационное уравнивание с линеаризацией
+    - Свободное уравнивание для диагностики грубых ошибок
+    - Разреженные матрицы (scipy.sparse) с ускорением CHOLMOD
+    - Расчёт весов по СП 11-104-97
+    - Вычисление ковариационной матрицы и точности пунктов
     """
 
-    def __init__(self):
-        self.adjustment_matrix = None  # Матрица коэффициентов A
-        self.observations_vector = None  # Вектор измерений L
-        self.weight_matrix = None  # Весовая матрица P
-        self.normal_matrix = None  # Нормальная матрица N = A^T · P · A
-        self.solution_vector = None  # Вектор решений ΔX
-        self.residuals = None  # Вектор остатков V
-        self.sigma0 = None  # СКО единицы веса
-        self.covariance_matrix = None  # Ковариационная матрица неизвестных
-
-    def _is_positive_definite(self, matrix: sparse.csr_matrix) -> bool:
+    def __init__(self, spec: InstrumentSpec = None):
         """
-        Проверка положительной определённости матрицы
-
-        Параметры:
-        - matrix: разреженная матрица
-
-        Возвращает:
-        - True если матрица положительно определена
+        Инициализация движка.
+        
+        Args:
+            spec: Характеристики прибора (по умолчанию техническое нивелирование)
         """
-        # Проверка диагональных элементов
-        diag = matrix.diagonal()
-        if np.any(diag <= 0):
-            return False
+        self.spec = spec or InstrumentSpec(class_code="4")
+        self.point_indices: Dict[str, int] = {}
+        self.approx_coords: Dict[str, float] = {}
+        self._last_result: Optional[AdjustmentResult] = None
 
-        # Проверка определителя (для небольших матриц)
-        if matrix.shape[0] < 100:
+    def adjust_heights(
+        self,
+        observations: List[Observation],
+        fixed_points: Dict[str, float],
+        max_iter: int = 10,
+        tol: float = 1e-5,
+        detect_gross_errors: bool = True,
+        compute_covariance: bool = True
+    ) -> AdjustmentResult:
+        """
+        Уравнивание высотной сети.
+        
+        Args:
+            observations: Список наблюдений
+            fixed_points: {punkt_id: фиксированная_высота}
+            max_iter: Максимальное число итераций
+            tol: Порог сходимости (макс. поправка)
+            detect_gross_errors: Выполнять ли диагностику грубых ошибок
+            compute_covariance: Вычислять ли ковариационную матрицу
+            
+        Returns:
+            AdjustmentResult: Результаты уравнивания
+        """
+        logger.info("🔹 Запуск уравнивания высотной сети...")
+        logger.info(f"  Наблюдений: {len(observations)}, Фиксированных пунктов: {len(fixed_points)}")
+
+        if not observations:
+            raise ValueError("Список наблюдений пуст")
+
+        # 1. Предварительное свободное уравнивание для поиска грубых ошибок
+        gross_errors_indices = []
+        if detect_gross_errors:
+            free_result = run_free_adjustment(observations, self.spec)
+            gross_errors_indices = free_result.gross_errors
+
+            if gross_errors_indices:
+                logger.warning(
+                    f"⚠️ Обнаружено {len(gross_errors_indices)} потенциально грубых измерений. "
+                    f"Рекомендуется проверка перед основным уравниванием."
+                )
+                # Фильтрация грубых ошибок
+                observations = filter_gross_errors(observations, gross_errors_indices)
+                logger.info(f"  После фильтрации: {len(observations)} наблюдений")
+
+        # 2. Построение индексации пунктов
+        self._build_index_map(observations, fixed_points)
+
+        # Инициализация приближённых высот
+        self.approx_coords = {pid: 0.0 for pid in self.point_indices}
+        self.approx_coords.update(fixed_points)
+
+        # 3. Итерационный процесс
+        dx_total = np.zeros(len(self.point_indices))
+        residuals = np.zeros(len(observations))
+        sigma_0 = 0.0
+        cov_matrix = None
+
+        converged = False
+        for iteration in range(max_iter):
+            logger.debug(f"  Итерация {iteration + 1}/{max_iter}")
+
+            # Построение уравнений на текущей итерации
+            A, L, P = build_linearized_equations(
+                observations, self.point_indices, self.approx_coords, self.spec
+            )
+
+            # Применение ограничений (фиксированные пункты)
+            A_free, L_corr, P_free, H_fixed, free_indices = apply_constraints(
+                A, L, P, fixed_points, self.point_indices
+            )
+
+            if A_free.shape[1] == 0:
+                logger.warning("Нет свободных параметров для уравнивания")
+                break
+
+            # Решение нормальной системы
+            dx_free, _ = solve_normal_equations(A_free, L_corr, P_free, compute_covariance=False)
+
+            # Обновление приближённых высот
+            for i, idx in enumerate(free_indices):
+                dx_total[idx] += dx_free[i]
+                # Обновляем только свободные пункты
+                for pid, pidx in self.point_indices.items():
+                    if pidx == idx and pid not in fixed_points:
+                        self.approx_coords[pid] += dx_free[i]
+
+            # Вычисление невязок
+            dx_full = np.zeros(len(self.point_indices))
+            for i, idx in enumerate(free_indices):
+                dx_full[idx] = dx_free[i]
+            residuals = A @ dx_full - L
+
+            # Вычисление σ₀
+            redundancy = A.shape[0] - len(free_indices)
+            sigma_0 = compute_sigma_0(residuals, P_free, redundancy)
+
+            max_correction = np.max(np.abs(dx_free)) if len(dx_free) > 0 else 0.0
+            logger.info(
+                f"  Итерация {iteration + 1}: ‖Δx‖∞ = {max_correction:.2e}, "
+                f"σ₀ = {sigma_0:.4f} м"
+            )
+
+            # Проверка сходимости
+            if max_correction < tol:
+                converged = True
+                logger.info("✅ Сходимость достигнута")
+                break
+
+        # 4. Ковариационная матрица (опционально)
+        if compute_covariance and converged:
             try:
-                det = np.linalg.det(matrix.toarray())
-                if det <= 1e-10:
-                    return False
-            except Exception:
-                pass
+                A_final, L_final, P_final = build_linearized_equations(
+                    observations, self.point_indices, self.approx_coords, self.spec
+                )
+                A_free_final, _, P_free_final, _, free_indices = apply_constraints(
+                    A_final, L_final, P_final, fixed_points, self.point_indices
+                )
 
-        return True
+                N = (A_free_final.T @ P_free_final @ A_free_final).tocsc()
+                from .solver import _compute_covariance_matrix
+                Q_free = _compute_covariance_matrix(N)
 
-    def setup_equations(self, A: sparse.csr_matrix,
-                        L: np.ndarray,
-                        P: sparse.csr_matrix) -> None:
-        """
-        Формирование системы уравнений поправок
+                # Масштабирование на σ₀²
+                cov_matrix = (sigma_0 ** 2) * Q_free
+            except Exception as e:
+                logger.warning(f"Не удалось вычислить ковариационную матрицу: {e}")
 
-        Параметры:
-        - A: разреженная матрица коэффициентов уравнений поправок (n × u)
-        - L: вектор свободных членов уравнений поправок (размерность n)
-        - P: весовая матрица измерений (диагональная, размерность n × n)
-
-        Уравнение поправок: V = A · ΔX - L
-        """
-        # Валидация входных данных
-        if not sparse.issparse(A):
-            A = sparse.csr_matrix(A)
-        if not sparse.issparse(P):
-            P = sparse.diags(P) if len(P.shape) == 1 else sparse.csr_matrix(P)
-
-        # Проверка размерностей
-        n, u = A.shape  # n - число измерений, u - число неизвестных
-        l_len = len(L)
-
-        # Проверка совместимости вектора измерений
-        if l_len != n:
-            raise ValueError(f"Несовместимые размерности: матрица A имеет {n} строк, "
-                             f"а вектор измерений имеет длину {l_len}")
-
-        # Проверка весовой матрицы
-        if P.shape != (n, n):
-            raise ValueError(f"Несовместимые размерности: весовая матрица P должна быть "
-                             f"{n}×{n}, а имеет размерность {P.shape}")
-
-        # Проверка весовой матрицы на положительную определённость
-        if not self._is_positive_definite(P):
-            logger.warning("Весовая матрица не является положительно определённой. "
-                           "Это может привести к некорректным результатам.")
-
-        self.adjustment_matrix = A
-        self.observations_vector = L
-        self.weight_matrix = P
-
-        # Формирование нормальной матрицы: N = A^T · P · A
-        self.normal_matrix = A.T @ P @ A
-
-    def solve_normal_equations(self) -> np.ndarray:
-        """
-        Решение системы нормальных уравнений с адаптивным выбором метода
-        
-        Автоматический выбор оптимального решателя в зависимости от размера сети:
-        - < 500 пунктов: плотное решение (np.linalg.solve) или lstsq при вырожденности
-        - 500-2000 пунктов: LU-разложение (scipy.sparse.linalg.splu)
-        - > 2000 пунктов: метод сопряжённых градиентов (scipy.sparse.linalg.cg)
-        
-        Возвращает:
-        - ΔX: вектор поправок к приближенным координатам
-        """
-        if self.normal_matrix is None:
-            raise ValueError("Необходимо сначала вызвать setup_equations")
-
-        # Вектор правой части: U = A^T · P · L
-        U = self.adjustment_matrix.T @ self.weight_matrix @ self.observations_vector
-        U_array = U.toarray().flatten() if sparse.issparse(U) else U.flatten()
-        
-        # Определение размера сети (число пунктов ≈ число неизвестных / 2)
-        n_unknowns = self.normal_matrix.shape[0]
-        n_points = n_unknowns // 2
-        
-        # Проверка положительной определённости нормальной матрицы
-        if not self._is_positive_definite(self.normal_matrix):
-            logger.warning("Нормальная матрица не является положительно определённой. "
-                          "Проверьте веса измерений и топологию сети.")
-
-        # Выбор метода решения в зависимости от размера сети
-        try:
-            # Для малых сетей (< 500 пунктов) используем плотное решение
-            if n_points < 500:
-                logger.info(f"Используем плотное решение (сеть ~{n_points} пунктов)")
-                N_dense = self.normal_matrix.toarray()
-                try:
-                    self.solution_vector = np.linalg.solve(N_dense, U_array)
-                except np.linalg.LinAlgError:
-                    # При вырожденности используем lstsq
-                    logger.warning("Матрица вырождена, используем np.linalg.lstsq")
-                    self.solution_vector, _, _, _ = np.linalg.lstsq(N_dense, U_array, rcond=None)
-                
-            # Для средних сетей (500-2000 пунктов) используем LU-разложение
-            elif n_points < 2000:
-                logger.info(f"Используем LU-разложение (сеть ~{n_points} пунктов)")
-                self.solution_vector = self._solve_with_lu(U_array)
-            
-            # Для больших сетей (> 2000 пунктов) используем итерационный метод
-            else:
-                logger.info(f"Используем итерационный метод (сеть ~{n_points} пунктов)")
-                self.solution_vector = self._solve_with_cg(U_array)
-                
-        except Exception as e:
-            logger.error(f"Ошибка при решении системы ({e}): попытка резервного метода")
-            # Резервный метод: плотное решение
-            try:
-                N_dense = self.normal_matrix.toarray()
-                self.solution_vector = np.linalg.solve(N_dense, U_array)
-                logger.info("Резервное плотное решение успешно применено")
-            except Exception as e2:
-                logger.error(f"Ошибка при резервном решении: {e2}")
-                raise ValueError(f"Не удалось решить систему нормальных уравнений: {e2}")
-
-        return self.solution_vector
-    
-    def _solve_with_lu(self, U_array: np.ndarray) -> np.ndarray:
-        """
-        Решение через LU-разложение разреженных матриц (scipy.sparse.linalg.splu).
-        
-        Производительность (замеры на Windows 10, Python 3.11):
-          - 100 пунктов: ~0.01 сек
-          - 500 пунктов: ~0.15 сек  
-          - 1000 пунктов: ~0.8 сек
-          - 2000 пунктов: ~4.5 сек
-        
-        Параметры:
-        - U_array: вектор правой части как numpy array
-        
-        Возвращает:
-        - solution_vector: вектор решений
-        """
-        try:
-            lu = splu(self.normal_matrix.tocsc())
-            solution = lu.solve(U_array)
-            logger.info(f"LU-разложение выполнено успешно. Размер матрицы: {self.normal_matrix.shape[0]}×{self.normal_matrix.shape[1]}")
-            return solution
-        except Exception as e:
-            logger.error(f"Ошибка при LU-разложении: {e}")
-            raise
-    
-    def _solve_with_cg(self, U_array: np.ndarray, tol: float = 1e-8, maxiter: int = 1000) -> np.ndarray:
-        """
-        Итерационный метод сопряжённых градиентов для больших сетей.
-        
-        Преимущества:
-          - Не требует разложения матрицы (экономия памяти)
-          - Линейная сложность относительно числа ненулевых элементов
-          - Хорошо масштабируется для сетей > 2000 пунктов
-        
-        Производительность (замеры на Windows 10, Python 3.11):
-          - 1000 пунктов: ~0.4 сек
-          - 2000 пунктов: ~1.8 сек
-          - 5000 пунктов: ~6.5 сек
-        
-        Параметры:
-        - U_array: вектор правой части как numpy array
-        - tol: точность сходимости (по умолчанию 1e-8)
-        - maxiter: максимальное число итераций (по умолчанию 1000)
-        
-        Возвращает:
-        - solution_vector: вектор решений
-        """
-        try:
-            # Создаём оператор для умножения на матрицу
-            def matvec(x):
-                return self.normal_matrix @ x
-            
-            N = self.normal_matrix.shape[0]
-            A_operator = LinearOperator((N, N), matvec=matvec)
-            
-            # Решаем систему итерационно
-            x, info = cg(A_operator, U_array, tol=tol, maxiter=maxiter)
-            
-            if info == 0:
-                logger.info(f"Метод сопряжённых градиентов сошёлся за {maxiter} итераций")
-            elif info > 0:
-                logger.warning(f"Метод сопряжённых градиентов не сошёлся за {maxiter} итераций (info={info})")
-                # Попытка использовать LU-разложение как резервный метод
-                return self._solve_with_lu(U_array)
-            else:
-                logger.error("Ошибка в методе сопряжённых градиентов")
-                raise RuntimeError("CG method failed")
-            
-            return x
-            
-        except Exception as e:
-            logger.error(f"Ошибка при итерационном решении: {e}")
-            # Возврат к LU-разложению как резервному методу
-            return self._solve_with_lu(U_array)
-
-    def calculate_residuals(self) -> np.ndarray:
-        """
-        Вычисление вектора остатков (поправок в измерения)
-        V = A · ΔX - L
-
-        Возвращает:
-        - V: вектор остатков (размерность n)
-        """
-        if self.solution_vector is None:
-            raise ValueError("Необходимо сначала вызвать solve_normal_equations")
-
-        self.residuals = self.adjustment_matrix @ self.solution_vector - self.observations_vector
-        return self.residuals
-
-    def calculate_sigma0(self) -> float:
-        """
-        Вычисление апостериорного СКО единицы веса
-
-        Формула: σ₀ = √(V^T · P · V / r)
-        где:
-        - V — вектор остатков
-        - P — весовая матрица
-        - r — число избыточных измерений (степень свободы)
-
-        Возвращает:
-        - σ₀: СКО единицы веса
-        """
-        if self.residuals is None:
-            self.calculate_residuals()
-
-        # Число измерений
-        n = len(self.observations_vector)
-        
-        # Фактическое число независимых неизвестных (ранг нормальной матрицы)
-        # Используем численный ранг для всех платформ (без зависимости от sksparse)
-        N_dense = self.normal_matrix.toarray()
-        u_effective = np.linalg.matrix_rank(N_dense, tol=1e-10)
-        
-        # Степень свободы (избыточность)
-        r = n - u_effective
-        
-        if r <= 0:
-            raise ValueError(f"Недостаточное число избыточных измерений: {r} "
-                            f"(измерений: {n}, независимых неизвестных: {u_effective})")
-
-        # СКО единицы веса
-        numerator = self.residuals.T @ self.weight_matrix @ self.residuals
-
-        # Защита от отрицательных значений из-за ошибок округления
-        if isinstance(numerator, np.ndarray):
-            numerator = float(numerator.item())
-
-        if numerator < 0:
-            if abs(numerator) < 1e-10:
-                # Пренебрежимо малое отрицательное значение - считаем нулём
-                numerator = 0.0
-                logger.warning("Числитель в формуле σ₀ отрицателен из-за ошибок округления. "
-                               "Принимаем равным нулю.")
-            else:
-                raise ValueError(f"Отрицательное значение числителя в формуле σ₀: {numerator}. "
-                                 "Проверьте правильность формирования весовой матрицы.")
-
-        self.sigma0 = np.sqrt(numerator / r)
-        
-        logger.info(f"СКО единицы веса: {self.sigma0:.6f} (r={r}, "
-                   f"ранг={u_effective}/{self.solution_vector.shape[0]})")
-
-        return self.sigma0
-
-    def calculate_covariance_matrix(self) -> sparse.csr_matrix:
-        """
-        Вычисление ковариационной матрицы уравненных неизвестных
-
-        Формула: Q_xx = σ₀² · N⁻¹
-        где:
-        - σ₀ — СКО единицы веса
-        - N — нормальная матрица
-
-        Возвращает:
-        - Q_xx: ковариационная матрица неизвестных (размерность u × u)
-        """
-        if self.sigma0 is None:
-            self.calculate_sigma0()
-
-        # Обратная нормальная матрица
-        # Используем псевдообратную матрицу для всех платформ (без зависимости от sksparse)
-        N_dense = self.normal_matrix.toarray()
-        N_inv = np.linalg.pinv(N_dense)
-        N_inv = sparse.csr_matrix(N_inv)
-
-        # Ковариационная матрица
-        self.covariance_matrix = (self.sigma0 ** 2) * N_inv
-
-        return self.covariance_matrix
-
-    def adjust(self, A: sparse.csr_matrix,
-               L: np.ndarray,
-               P: sparse.csr_matrix) -> Dict[str, Any]:
-        """
-        Полный цикл уравнивания сети
-
-        Параметры:
-        - A: матрица коэффициентов уравнений поправок
-        - L: вектор свободных членов
-        - P: весовая матрица
-
-        Возвращает:
-        - Словарь с результатами уравнивания
-        """
-        # Формирование системы уравнений
-        self.setup_equations(A, L, P)
-
-        # Решение нормальных уравнений
-        dx = self.solve_normal_equations()
-
-        # Вычисление остатков
-        residuals = self.calculate_residuals()
-
-        # Вычисление СКО единицы веса
-        sigma0 = self.calculate_sigma0()
-
-        # Вычисление ковариационной матрицы
-        Qxx = self.calculate_covariance_matrix()
-
-        return {
-            'coordinate_corrections': dx,
-            'residuals': residuals,
-            'sigma0': sigma0,
-            'covariance_matrix': Qxx,
-            'normal_matrix': self.normal_matrix,
-            'iterations': 1  # Для классического МНК итерации не нужны
+        # 5. Формирование результата
+        adjusted_heights = {
+            pid: self.approx_coords.get(pid, 0.0)
+            for pid in self.point_indices
         }
+
+        result = AdjustmentResult(
+            corrections=dx_total,
+            residuals=residuals,
+            sigma_0=sigma_0,
+            covariance_matrix=cov_matrix,
+            iterations=iteration + 1,
+            status="converged" if converged else "max_iterations_reached",
+            diagnostics={
+                "redundancy": redundancy,
+                "gross_errors_detected": len(gross_errors_indices),
+                "num_observations": len(observations),
+                "num_points": len(self.point_indices),
+            },
+            point_indices=self.point_indices.copy(),
+            adjusted_heights=adjusted_heights
+        )
+
+        self._last_result = result
+        logger.info(f"📊 Уравнивание завершено: σ₀ = {sigma_0:.4f} м, итераций = {iteration + 1}")
+
+        return result
+
+    def _build_index_map(
+        self,
+        observations: List[Observation],
+        fixed_points: Dict[str, float]
+    ) -> None:
+        """Построение маппинга пунктов в индексы матрицы"""
+        all_points = set()
+        for obs in observations:
+            all_points.add(obs.station_id)
+            all_points.add(obs.target_id)
+
+        # Сортировка для детерминированного порядка
+        self.point_indices = {pid: i for i, pid in enumerate(sorted(all_points))}
+        logger.debug(f"Построена индексация: {len(self.point_indices)} пунктов")
+
+    def get_point_precision(self, point_id: str) -> Optional[float]:
+        """
+        Получение СКП высоты пункта из ковариационной матрицы.
+        
+        Args:
+            point_id: Имя пункта
+            
+        Returns:
+            float: СКП высоты в метрах (или None если матрица не вычислена)
+        """
+        if self._last_result is None or self._last_result.covariance_matrix is None:
+            return None
+
+        idx = self.point_indices.get(point_id)
+        if idx is None:
+            return None
+
+        try:
+            cov = self._last_result.covariance_matrix
+            if idx < cov.shape[0]:
+                variance = cov[idx, idx]
+                return np.sqrt(abs(variance))
+        except Exception:
+            pass
+
+        return None

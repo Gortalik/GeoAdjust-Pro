@@ -108,6 +108,14 @@ class StationObservationTotal:
         self.is_active = True
         self.angle_unit = 'gons'
         self._original_obs = []
+
+    def _safe_str(self, value, fmt=".4f"):
+        if value is None:
+            return ""
+        try:
+            return f"{float(value):{fmt}}"
+        except (ValueError, TypeError):
+            return str(value) or ""
     
     def add_observation(self, obs):
         """Добавить измерение к группе"""
@@ -257,7 +265,7 @@ def _total_station_total_data(self, obs: StationObservationTotal, col):
         return "-"
     elif col == 5:  # Левое наклонное расстояние
         if obs.left_slope is not None:
-            return f"{obs.left_slope:.4f}"
+            return self._safe_str(getattr(obs, 'left_slope', None), ".4f")
         return "-"
     elif col == 6:  # Правый горизонтальный угол
         if obs.right_direction is not None:
@@ -275,7 +283,7 @@ def _total_station_total_data(self, obs: StationObservationTotal, col):
         return "-"
     elif col == 8:  # Правое наклонное расстояние
         if obs.right_slope is not None:
-            return f"{obs.right_slope:.4f}"
+            return self._safe_str(getattr(obs, 'right_slope', None), ".4f")
         return "-"
     elif col == 9:  # Статус
         return "✓" if obs.is_active else "✗"
@@ -311,6 +319,7 @@ class ObservationsTableModel(QAbstractTableModel):
     def set_observations(self, observations: List[Any]):
         """Установка списка измерений"""
         logger.info(f"ObservationsTableView.set_observations: setting {len(observations)} observations")
+        self._station_filter = None  # Сбрасываем фильтр по станции при новом импорте
         self.beginResetModel()
         self._observations = observations
         self._filter_observations()
@@ -318,16 +327,12 @@ class ObservationsTableModel(QAbstractTableModel):
         self.endResetModel()
     
     def set_tab(self, tab: str):
-        """Переключение вкладки
-
-        Args:
-            tab: 'leveling', 'total_station', или 'gnss'
-        """
-
+        """Переключение вкладки"""
         self._current_tab = tab
-        self.beginResetModel()
-        self._filter_observations()
-        self.endResetModel()
+        if hasattr(self, '_observations') and self._observations:
+            self.beginResetModel()
+            self._filter_observations()
+            self.endResetModel()
 
         # Обновление интерфейса убрано, чтобы избежать бесконечного цикла
         # Qt автоматически обновит интерфейс при изменении модели
@@ -339,7 +344,6 @@ class ObservationsTableModel(QAbstractTableModel):
 
     def _filter_observations(self):
         """Фильтрация измерений по текущей вкладке и станции"""
-        print(f"FILTER: tab={self._current_tab}, station_filter={self._station_filter}")
         # Сначала фильтруем по типу измерений
         if self._current_tab == 'leveling':
             filtered = [
@@ -364,7 +368,7 @@ class ObservationsTableModel(QAbstractTableModel):
         else:
             filtered = self._observations
 
-        print(f"FILTER: after type filter, {len(filtered)} observations")
+
 
         # Затем применяем фильтр по станции, если он установлен
         if self._station_filter:
@@ -501,19 +505,20 @@ class ObservationsTableModel(QAbstractTableModel):
         return sorted(observations, key=sort_key)
 
     def _get_obs_type(self, obs) -> str:
-        """Получение типа измерения из объекта или словаря"""
+        """Получение типа измерения"""
         from geoadjust.core.network.models import CombinedObservation
         if isinstance(obs, CombinedObservation):
-            print(f"GET_TYPE: CombinedObservation -> 'combined'")
             return 'combined'
         if isinstance(obs, dict):
-            # Если dict имеет поля CombinedObservation, считать combined
-            if 'horizontal_angle' in obs or 'zenith_angle' in obs or 'slope_distance' in obs:
-                print(f"GET_TYPE: dict with angles -> 'combined'")
+            tacheo_fields = [
+                'horizontal_angle', 'zenith_angle', 'slope_distance',
+                'hz_angle', 'v_angle', 'distance', 'horizontal_distance',
+                'direction', 'vertical_angle'
+            ]
+            if any(field in obs for field in tacheo_fields):
                 return 'combined'
-            obs_type = obs.get('type', obs.get('obs_type', ''))
-            print(f"GET_TYPE: dict -> '{obs_type}'")
-            return obs_type
+            return obs.get('type', obs.get('obs_type', ''))
+        return getattr(obs, 'obs_type', '')
         obs_type = getattr(obs, 'obs_type', '')
         print(f"GET_TYPE: object -> '{obs_type}'")
         return obs_type
@@ -557,6 +562,11 @@ class ObservationsTableModel(QAbstractTableModel):
                 return headers[section]
         return None
     
+    def _get_obs_type(self, obs):
+        if isinstance(obs, dict):
+            return obs.get('type', obs.get('obs_type', 'unknown'))
+        return getattr(obs, 'type', getattr(obs, 'obs_type', 'unknown'))
+
     def data(self, index, role=Qt.DisplayRole):
         if not index.isValid() or role != Qt.DisplayRole:
             return None
@@ -601,7 +611,7 @@ class ObservationsTableModel(QAbstractTableModel):
             return self._get_to_point(obs)
         elif col == 4:  # Превышение
             value = self._get_value(obs)
-            return f"{value:.5f}"
+            return self._safe_str(value, ".5f")
         elif col == 5:  # Расстояние
             dist = obs.get('distance') if isinstance(obs, dict) else getattr(obs, 'distance', None)
             if dist is not None:
@@ -933,6 +943,11 @@ class ObservationsTableWidget(QWidget):
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+
+    def _get_obs_type(self, obs):
+        if isinstance(obs, dict):
+            return obs.get('type', obs.get('obs_type', 'unknown'))
+        return getattr(obs, 'type', getattr(obs, 'obs_type', 'unknown'))
         
         # Вкладки по типам измерений
         from PyQt5.QtWidgets import QTabWidget
@@ -1007,16 +1022,17 @@ class ObservationsTableWidget(QWidget):
                 obs_type = self._get_obs_type(sample)
                 print(f"SET_OBS: sample obs_type = {obs_type}")
 
-        self.leveling_model.set_observations(observations)
-        self.leveling_intermediate_model.set_observations(observations)
-        self.total_station_model.set_observations(observations)
-        self.gnss_model.set_observations(observations)
-
-        # Устанавливаем правильные вкладки
+        # Сначала устанавливаем вкладки
         self.leveling_model.set_tab('leveling')
         self.leveling_intermediate_model.set_tab('leveling_intermediate')
         self.total_station_model.set_tab('total_station')
         self.gnss_model.set_tab('gnss')
+
+        # Затем передаём данные (фильтрация сработает правильно)
+        self.leveling_model.set_observations(observations)
+        self.leveling_intermediate_model.set_observations(observations)
+        self.total_station_model.set_observations(observations)
+        self.gnss_model.set_observations(observations)
     
     def update_data(self, observations):
         """Обновление данных (алиас для set_observations)"""

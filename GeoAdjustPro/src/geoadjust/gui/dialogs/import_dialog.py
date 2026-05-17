@@ -14,6 +14,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QThread
 import logging
 
 logger = logging.getLogger(__name__)
+print("[IMPORT DIALOG] ImportDialog module loaded")
 
 
 class ImportWorker(QThread):
@@ -97,67 +98,43 @@ class ImportWorker(QThread):
         from geoadjust.io.formats.gsi import GSIParser
         from pathlib import Path
 
+        print("[IMPORT] _import_gsi started")
         parser = GSIParser()
-        data = parser.parse(Path(self.file_path))
+        result = parser.parse(Path(self.file_path))
+        print(f"[IMPORT] parser returned type={type(result)}")
         
-        # Конвертация в формат, ожидаемый приложением
-        points = []
-        for p in data.get('points', []):
-            points.append({
-                'name': p.get('point_id', ''),
-                'x': p.get('x', 0) or 0,
-                'y': p.get('y', 0) or 0,
-                'h': p.get('h', 0) or 0,
-                'type': p.get('point_type', 'free')
-            })
+        try:
+            print(f"[IMPORT] result keys = {list(result.keys()) if isinstance(result, dict) else 'not-dict'}")
+        except Exception as e:
+            print(f"[IMPORT] error getting keys: {e}")
+
+        obs_list = result.get('observations', []) if isinstance(result, dict) else (result or [])
+        print(f"[IMPORT] obs_list len = {len(obs_list)}")
         
-        observations = []
-        for obs in data.get('observations', []):
-            observations.append({
-                'from_point': getattr(obs, 'from_point', ''),
-                'to_point': getattr(obs, 'to_point', ''),
-                'type': getattr(obs, 'obs_type', 'direction'),
-                'value': getattr(obs, 'value', 0),
-                'sigma': getattr(obs, 'std_dev', 0.00005),
-                'station_session_id': getattr(obs, 'station_session_id', ''),
-                'instrument_height': getattr(obs, 'instrument_height', None),
-                'target_height': getattr(obs, 'target_height', None),
-            })
+        point_names = set()
+        for o in obs_list:
+            if hasattr(o, 'station_id'): point_names.add(o.station_id)
+            if hasattr(o, 'target_id'): point_names.add(o.target_id)
         
-        # Конвертация сессий станций для UI
-        station_sessions = []
-        for session in data.get('station_sessions', []):
-            session_data = {
-                'session_id': session.session_id,
-                'station_name': session.station_name,
-                'instrument_height': session.instrument_height,
-                'target_height': session.target_height,
-                'temperature': session.temperature,
-                'pressure': session.pressure,
-                'num_observations': len(session.observations),
-                'line_start': session.line_start,
-                'line_end': session.line_end,
-                'observations': []
-            }
-            for obs in session.observations:
-                session_data['observations'].append({
-                    'obs_type': obs.obs_type,
-                    'from_point': obs.from_point,
-                    'to_point': obs.to_point,
-                    'value': obs.value,
-                    'line_number': obs.line_number,
-                })
-            station_sessions.append(session_data)
+        print("[IMPORT] building points list...")
+        points = [{'name': name, 'type': 'free'} for name in sorted(point_names)]
+        print(f"[IMPORT] points built: {len(points)}")
+        
+        print("[IMPORT] building observations list...")
+        observations = [{
+            'from_point': getattr(o, 'station_id', ''),
+            'to_point': getattr(o, 'target_id', ''),
+            'type': 'height_diff',
+            'value': getattr(o, 'value', 0),
+            'sigma': 0.005,
+        } for o in obs_list]
+        print(f"[IMPORT] observations built: {len(observations)}")
         
         return {
             'points': points,
             'observations': observations,
-            'station_sessions': station_sessions,
-            'metadata': {
-                'version': data.get('version', ''),
-                'encoding': data.get('encoding', ''),
-                'num_station_sessions': data.get('num_station_sessions', 0)
-            }
+            'station_sessions': [],
+            'metadata': {}
         }
     
     def _import_sdr(self) -> Dict:
@@ -389,6 +366,7 @@ class ImportDialog(QDialog):
     """Диалог импорта данных"""
     
     def __init__(self, parent=None):
+        print("[IMPORT DIALOG] ImportDialog __init__ started")
         super().__init__(parent)
         
         self.imported_data = None
@@ -692,6 +670,32 @@ class ImportDialog(QDialog):
         self.progress_bar.setValue(0)
         self.import_btn.setEnabled(False)
 
+        def _import_gsi():
+            print("[IMPORT] _import_gsi started")
+            try:
+                from geoadjust.io.formats.gsi import GSIParser
+                from pathlib import Path
+                parser = GSIParser()
+                result = parser.parse(Path(self.file_path))
+                print(f"[IMPORT] gsi result type={type(result)}")
+                obs_list = result.get('observations', []) if isinstance(result, dict) else (result or [])
+                point_names = set()
+                for o in obs_list:
+                    if hasattr(o, 'station_id'): point_names.add(getattr(o, 'station_id', ''))
+                    if hasattr(o, 'target_id'): point_names.add(getattr(o, 'target_id', ''))
+                points = [{'name': n, 'type': 'free'} for n in sorted(point_names)]
+                observations = [{
+                    'from_point': getattr(o, 'station_id', ''),
+                    'to_point': getattr(o, 'target_id', ''),
+                    'type': 'height_diff',
+                    'value': getattr(o, 'value', 0),
+                    'sigma': 0.005
+                } for o in obs_list]
+                return {'points': points, 'observations': observations, 'station_sessions': [], 'metadata': {}}
+            except Exception as e:
+                print(f"[IMPORT GSI ERROR] {e}")
+                return {'points': [], 'observations': [], 'station_sessions': [], 'metadata': {}}
+
         # Устанавливаем путь к файлу для методов импорта
         self.file_path = file_path
 
@@ -701,7 +705,7 @@ class ImportDialog(QDialog):
             if format_type == 'dat':
                 result = self._import_dat()
             elif format_type == 'gsi':
-                result = self._import_gsi()
+                result = _import_gsi()
             elif format_type == 'sdr':
                 result = self._import_sdr()
             elif format_type == 'excel':
@@ -729,6 +733,12 @@ class ImportDialog(QDialog):
     def _on_import_finished(self, data: Dict):
         """Завершение импорта"""
         self.imported_data = data
+        print(f"[IMPORT] _on_import_finished received {len(data.get('points', []))} points, {len(data.get('observations', []))} observations")
+
+        # Автоматически добавляем данные в проект главного окна
+        if self.parent() and hasattr(self.parent(), '_process_imported_data'):
+            print("[IMPORT] calling parent._process_imported_data")
+            self.parent()._process_imported_data(data)
 
         # Обновление предпросмотра
         self._update_preview(data)
@@ -791,24 +801,7 @@ class ImportDialog(QDialog):
         
         self.preview_table.resizeColumnsToContents()
 
-    def _import_gsi(self) -> Dict:
-        """Импорт из формата GSI (Leica)"""
-        from geoadjust.io.formats.gsi import GSIParser
-        from pathlib import Path
-
-        parser = GSIParser()
-        data = parser.parse(Path(self.file_path))
-
-        # Конвертация в формат, ожидаемый приложением
-        points = []
-        for p in data.get('points', []):
-            points.append({
-                'name': p.get('point_id', ''),
-                'x': p.get('x', 0) or 0,
-                'y': p.get('y', 0) or 0,
-                'h': p.get('h', 0) or 0,
-                'type': p.get('point_type', 'free')
-            })
+    # _import_gsi удалён (дубликат) — используется версия выше
 
         observations = []
         for obs in data.get('observations', []):

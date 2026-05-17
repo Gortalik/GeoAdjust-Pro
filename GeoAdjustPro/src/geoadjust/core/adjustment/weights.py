@@ -63,13 +63,10 @@ def calculate_weight(
         # Fallback для избежания деления на ноль
         return 1e6
 
-def _calculate_leveling_weight(distance_km: float, class_code: str, setups: int = 1) -> float:
-    """Вес по км + по штативам (двойная оценка)"""
-    m_h_mm = LEVELING_CLASS_MH.get(class_code, 5.0)
-    m_km = m_h_mm * 1e-3
-    m_tripod = 0.5e-3 * (setups ** 0.5)   # 0.5 мм на штатив
-    m_total = (m_km**2 * distance_km + m_tripod**2) ** 0.5
-    return 1.0 / (m_total ** 2)
+def _calculate_leveling_weight(distance_km: float, class_code: str) -> float:
+    """Вес для нивелирования: σ_h² = m_h² * L"""
+    m_h_mm = LEVELING_CLASS_MH.get(class_code, 5.0)  # мм/√км
+    m_h_m = m_h_mm * 1e-3  # перевод в метры
 
     # Дисперсия: σ² = m_h² * L (L в км)
     sigma_sq = (m_h_m ** 2) * max(distance_km, 0.001)

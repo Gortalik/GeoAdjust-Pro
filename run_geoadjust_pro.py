@@ -29,7 +29,7 @@ def run_geoadjust_pro():
     print("Запуск приложения...")
     print()
 
-    # Переход в директорию приложения
+    # Переход в директорию приложения (полная развёрнутая оболочка)
     app_dir = Path(__file__).parent / "GeoAdjustPro" / "src"
 
     try:
