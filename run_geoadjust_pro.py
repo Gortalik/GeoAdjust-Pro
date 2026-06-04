@@ -29,6 +29,13 @@ def run_geoadjust_pro():
     print("Запуск приложения...")
     print()
 
+    # Fix Qt platform plugin path
+    import PyQt5
+    qt_plugins = os.path.join(os.path.dirname(PyQt5.__file__), 'Qt5', 'plugins')
+    os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = os.path.join(qt_plugins, 'platforms')
+    os.environ['QT_QPA_PLATFORM'] = 'windows'
+    print(f"Qt plugins path: {os.environ['QT_QPA_PLATFORM_PLUGIN_PATH']}")
+
     # Переход в директорию приложения (полная развёрнутая оболочка)
     app_dir = Path(__file__).parent / "GeoAdjustPro" / "src"
 
@@ -36,7 +43,8 @@ def run_geoadjust_pro():
         # Запуск приложения
         os.chdir(app_dir)
         result = subprocess.run([sys.executable, "-m", "geoadjust"],
-                              capture_output=False, text=True)
+                              capture_output=False, text=True,
+                              env={**os.environ})
 
         return result.returncode == 0
 

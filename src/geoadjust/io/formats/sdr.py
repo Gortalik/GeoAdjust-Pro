@@ -1,5 +1,6 @@
 """Парсер Sokkia SDR33 с данными тахеометра"""
 import re
+import numpy as np
 from pathlib import Path
 from typing import Optional, Dict, List
 from ..base import BaseParser, Observation, ObsType
@@ -125,24 +126,51 @@ class SDRParser(BaseParser):
 
         # 2. Наблюдения из измерений тахеометра
         for meas in self.measurements:
-            # Для нивелирования используем вертикальный угол для определения превышения
-            # Превышение ≈ distance * sin(vert_angle) (упрощенная формула)
-            # В реальности нужна более сложная обработка
+            # Добавляем три типа наблюдений: дистанция, вертикальный угол, горизонтальный угол
+            # 1) Дистанция (наклонное расстояние) – тип DISTANCE
+            observations.append(Observation(
+                station_id=meas['station'],
+                target_id=meas['target'],
+                value=meas['distance'],
+                distance=meas['distance'],
+                type=ObsType.DISTANCE,
+                setup_id=f"sdr_dist_{meas['station']}_{meas['target']}",
+                notes=f"SDR33_DIST D={meas['distance']:.3f}"
+            ))
+            # 2) Вертикальный угол – тип ANGLE_V (в радианах)
+            observations.append(Observation(
+                station_id=meas['station'],
+                target_id=meas['target'],
+                value=meas['vert_angle'],
+                distance=meas['distance'],
+                type=ObsType.ANGLE_V,
+                setup_id=f"sdr_vert_{meas['station']}_{meas['target']}",
+                notes=f"SDR33_VERT B={meas['vert_angle']:.4f}"
+            ))
+            # 3) Горизонтальный угол – тип ANGLE_HZ (в градусах)
+            observations.append(Observation(
+                station_id=meas['station'],
+                target_id=meas['target'],
+                value=meas['horiz_reading'],
+                distance=meas['distance'],
+                type=ObsType.ANGLE_HZ,
+                setup_id=f"sdr_hz_{meas['station']}_{meas['target']}",
+                notes=f"SDR33_HZ R={meas['horiz_reading']:.4f}"
+            ))
+            # При желании добавить высотную разность (примерная) как уровень
             try:
-                # Простая аппроксимация превышения
-                vert_angle_rad = meas['vert_angle'] * 3.14159 / 180.0  # градусы в радианы
-                elevation_diff = meas['distance'] * vert_angle_rad  # грубая аппроксимация
-
+                vert_angle_rad = meas['vert_angle'] * 3.14159 / 180.0
+                elevation_diff = meas['distance'] * np.sin(vert_angle_rad)
                 observations.append(Observation(
                     station_id=meas['station'],
                     target_id=meas['target'],
                     value=elevation_diff,
                     distance=meas['distance'],
                     type=ObsType.LEVELING,
-                    setup_id=f"sdr_meas_{meas['station']}_{meas['target']}",
-                    notes=f"SDR33_MEAS VA={meas['vert_angle']:.4f} HR={meas['horiz_reading']:.4f}"
+                    setup_id=f"sdr_lev_{meas['station']}_{meas['target']}",
+                    notes=f"SDR33_LEV diff={elevation_diff:.3f}"
                 ))
-            except (ValueError, KeyError):
-                continue
+            except Exception:
+                pass
 
         return observations

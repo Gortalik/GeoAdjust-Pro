@@ -96,7 +96,7 @@ def _solve_sparse_system(N: sp.csc_matrix, U: np.ndarray) -> np.ndarray:
             "Применяю регуляризацию Лежандра."
         )
         # Регуляризация: N_reg = N + λ·I
-        lambda_reg = 1e-9
+        lambda_reg = 1e-6
         N = N + lambda_reg * sp.eye(N.shape[0], format="csc")
 
     # 2. Попытка решения через UMFPACK

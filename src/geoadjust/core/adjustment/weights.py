@@ -11,6 +11,8 @@ class ObsType(Enum):
     DISTANCE = "distance"
     ANGLE = "angle"
     DIRECTION = "direction"
+    ANGLE_HZ = "angle_hz"
+    ANGLE_V = "angle_v"
 
 @dataclass
 class InstrumentSpec:
